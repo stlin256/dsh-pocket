@@ -27,6 +27,12 @@ export function nativeInlineFileReference(value: string): string {
   return '';
 }
 
+/** Links whose normal action leaves the workspace for another application. */
+export function nativeInlineExternalLink(value: string): boolean {
+  const text = value.trim();
+  return /^(?:https?:|mailto:|tel:)/i.test(text);
+}
+
 function run(text: string, style: NativeInlineRun): NativeInlineRun {
   const value = new NativeInlineRun();
   value.text = text; value.bold = style.bold; value.italic = style.italic;

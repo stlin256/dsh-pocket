@@ -514,7 +514,8 @@ test('Workspace projection isolates pins, sorts by interaction and keeps drag co
 });
 
 test('native inline markdown preserves literal code and malformed text while styling nested runs', () => {
-  const { nativeInlineMarkdown, nativeInlineFileReference } = load('NativeInlineMarkdown', {});
+  const { nativeInlineMarkdown, nativeInlineFileReference, nativeInlineExternalLink } =
+    load('NativeInlineMarkdown', {});
   const runs = nativeInlineMarkdown('**bold and `a_*b`** · [readme](</workspace/docs/readme.md>) · [web](https://example.com/a_(b))');
   assert.equal(runs.map(x => x.text).join(''),'bold and a_*b · readme · web');
   assert.equal(runs.find(x => x.code).text,'a_*b');
@@ -534,6 +535,22 @@ test('native inline markdown preserves literal code and malformed text while sty
   assert.equal(nativeInlineFileReference('object.value'), '');
   const fileCode = nativeInlineMarkdown('see `src/app.ts:42`').find(x => x.code);
   assert.equal(fileCode.href, 'src/app.ts:42');
+  assert.equal(nativeInlineExternalLink('https://example.com/docs'), true);
+  assert.equal(nativeInlineExternalLink('http://example.com'), true);
+  assert.equal(nativeInlineExternalLink('mailto:author@example.com'), true);
+  assert.equal(nativeInlineExternalLink('tel:+123456789'), true);
+  assert.equal(nativeInlineExternalLink('/workspace/docs/readme.md'), false);
+  assert.equal(nativeInlineExternalLink('#section'), false);
+  assert.equal(nativeInlineExternalLink('ordinary text'), false);
+});
+
+test('external inline links use a themed clickable SVG image span', () => {
+  const inlineText = readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/components/NativeInlineText.ets', import.meta.url), 'utf8');
+  assert.match(inlineText, /nativeInlineExternalLink\(run\.href\)/);
+  assert.match(inlineText, /ImageSpan\(\$rawfile\('dsh-icons\/external-link-outline\.svg'\)\)/);
+  assert.match(inlineText, /\.colorFilter\(this\.externalIconFilter\(\)\)/);
+  assert.match(inlineText, /\.onClick\(\(\): void => \{ this\.open\(run\); \}\)/);
 });
 
 test('native links resolve workspace files relative to the session cwd', () => {

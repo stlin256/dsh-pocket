@@ -1,5 +1,11 @@
 import { common } from '@kit.AbilityKit';
-import { nativeInlineMarkdown, NativeInlineRun } from '../services/NativeInlineMarkdown';
+import { ColorMetrics } from '@kit.ArkUI';
+import { drawing } from '@kit.ArkGraphics2D';
+import {
+  nativeInlineExternalLink,
+  nativeInlineMarkdown,
+  NativeInlineRun
+} from '../services/NativeInlineMarkdown';
 import { NativeHarnessClient } from '../services/NativeHarnessClient';
 import { nativeBareFileName, nativeFileTarget, nativeLinkKind } from '../services/NativeLinkResolver';
 import { NativeFileViewRequest } from '../services/NativeSessionModel';
@@ -49,6 +55,15 @@ export struct NativeInlineText {
   }
   private runBackground(run: NativeInlineRun): TextBackgroundStyle {
     return { color: run.code ? this.dark ? '#353638' : '#EBEEF2' : Color.Transparent, radius: run.code ? 3 : 0 };
+  }
+  private externalIconFilter(): drawing.ColorFilter {
+    const color = ColorMetrics.resourceColor(this.dark ? '#8AB4FF' : '#3964FE');
+    return drawing.ColorFilter.createBlendModeColorFilter({
+      alpha: color.alpha,
+      red: color.red,
+      green: color.green,
+      blue: color.blue
+    }, drawing.BlendMode.SRC_IN);
   }
   private async open(run: NativeInlineRun): Promise<void> {
     if (!run.href) return;
@@ -172,6 +187,15 @@ export struct NativeInlineText {
           .onClick((): void => {
             if (run.href) this.open(run);
           })
+        if (nativeInlineExternalLink(run.href)) {
+          Span(' ').fontSize(Math.max(2, this.textSize - 8))
+          ImageSpan($rawfile('dsh-icons/external-link-outline.svg'))
+            .width(Math.max(9, this.textSize - 3)).height(Math.max(9, this.textSize - 3))
+            .verticalAlign(ImageSpanAlignment.CENTER)
+            .supportSvg2(true)
+            .colorFilter(this.externalIconFilter())
+            .onClick((): void => { this.open(run); })
+        }
       }, (_run: NativeInlineRun, index: number) => index.toString())
     }.fontSize(this.textSize).lineHeight(this.lineHeight)
       .width('100%').wordBreak(WordBreak.BREAK_WORD)
