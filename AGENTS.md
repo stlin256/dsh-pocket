@@ -131,6 +131,22 @@ or real transcript content in source, tests, docs, logs or commits.
   [2026-10-31-stream-recovery-composer-attachments.md](docs/specs/2026-10-31-stream-recovery-composer-attachments.md)
 - Latest DSH stream recovery and native composer attachment E2E:
   [2026-10-31-stream-recovery-composer-attachments-e2e.md](docs/testing/2026-10-31-stream-recovery-composer-attachments-e2e.md)
+- Rendering, navigation and startup requirement:
+  [2026-11-01-render-navigation-startup.md](docs/requirements/2026-11-01-render-navigation-startup.md)
+- Rendering, navigation and startup research:
+  [2026-11-01-render-navigation-startup.md](docs/research/2026-11-01-render-navigation-startup.md)
+- External link affordance spec:
+  [2026-11-01-external-link-affordance.md](docs/specs/2026-11-01-external-link-affordance.md)
+- Restored conversation startup spec:
+  [2026-11-01-startup-conversation-restoration.md](docs/specs/2026-11-01-startup-conversation-restoration.md)
+- Conversation dock inset spec:
+  [2026-11-01-conversation-dock-inset.md](docs/specs/2026-11-01-conversation-dock-inset.md)
+- File browser history spec:
+  [2026-11-01-file-browser-history.md](docs/specs/2026-11-01-file-browser-history.md)
+- PDF and HTML preview spec:
+  [2026-11-01-pdf-html-preview.md](docs/specs/2026-11-01-pdf-html-preview.md)
+- Rendering, navigation and startup E2E:
+  [2026-11-01-render-navigation-startup-e2e.md](docs/testing/2026-11-01-render-navigation-startup-e2e.md)
 - Continuous history prefetch and split transcript-cache requirement:
   [2026-10-31-history-continuous-prefetch.md](docs/requirements/2026-10-31-history-continuous-prefetch.md)
 - Continuous history prefetch and split transcript-cache implementation spec:
