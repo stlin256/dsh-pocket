@@ -636,6 +636,108 @@ test('native diff renders only explicit or applied edits and honors null old tex
   assert.equal(nativeDiff(message({ output: 'old\n+new' })).matched, false);
 });
 
+test('turn file changes aggregate only settled explicit mutations by stable path', () => {
+  const types = load('NativeSessionModel', {});
+  const difference = load('NativeDiff', {});
+  const turnChanges = load('NativeTurnChanges', {
+    './NativeSessionModel': types,
+    './NativeDiff': difference
+  });
+  const tool = (callId, turnKey, name, fields = {}) => Object.assign(
+    new types.NativeMessage(), {
+      id: callId, callId, turnKey, role: 'tool', toolName: name,
+      phase: 'result', status: 'success', toolName: name,
+      args: '', metaRaw: '', output: '', error: '', failed: false, outcome: ''
+    }, fields);
+  const footer = (turnKey, outcome = 'completed') => Object.assign(
+    new types.NativeMessage(), {
+      id: 'end-' + turnKey, role: 'turn-footer', turnKey,
+      footerOutcome: outcome, outcome
+    });
+
+  const first = tool('call-a', 'turn:1', 'write', {
+    args: JSON.stringify({ path: 'src/a.ts', oldText: 'old', newText: 'new' })
+  });
+  const second = tool('call-b', 'turn:1', 'apply_patch', {
+    output: '*** Begin Patch\n*** Update File: src/a.ts\n@@ -1,1 +1,2 @@\n-old\n+new\n+more\n' +
+      '*** Add File: src/b.ts\n@@ -0,0 +1,1 @@\n+created\n*** End Patch'
+  });
+  const failed = tool('call-failed', 'turn:1', 'edit', {
+    failed: true,
+    args: JSON.stringify({ path: 'src/failed.ts', oldText: 'a', newText: 'b' })
+  });
+  const preparing = tool('call-preparing', 'turn:1', 'edit', {
+    phase: 'start', status: 'preparing',
+    args: JSON.stringify({ path: 'src/preparing.ts', oldText: 'a', newText: 'b' })
+  });
+  const prose = tool('call-read', 'turn:1', 'read', {
+    output: 'diff --git a/src/fake.ts b/src/fake.ts\n+fake'
+  });
+  const process = Object.assign(new types.NativeMessage(), {
+    id: 'process-one', role: 'process', turnKey: 'turn:1',
+    children: [first, failed, preparing, second, prose]
+  });
+  const rows = [process, footer('turn:1')];
+  const summaries = turnChanges.nativeTurnChanges(rows);
+  assert.equal(summaries.length, 1);
+  assert.equal(summaries[0].running, false);
+  assert.equal(summaries[0].outcome, 'completed');
+  assert.equal(summaries[0].fileCount, 2);
+  assert.deepEqual(Array.from(summaries[0].files, file => ({
+    path: file.path, added: file.added, removed: file.removed
+  })), [
+    { path: 'src/a.ts', added: 3, removed: 2 },
+    { path: 'src/b.ts', added: 1, removed: 0 }
+  ]);
+  assert.equal(summaries[0].added, 4);
+  assert.equal(summaries[0].removed, 2);
+  assert.equal(turnChanges.nativeTurnChangeFor(summaries, 'turn:1'), summaries[0]);
+  assert.equal(turnChanges.nativeTurnChangeFor(summaries, 'turn:missing'), null);
+});
+
+test('live turn file changes require an active unfinished turn and ignore malformed diffs', () => {
+  const types = load('NativeSessionModel', {});
+  const difference = load('NativeDiff', {});
+  const turnChanges = load('NativeTurnChanges', {
+    './NativeSessionModel': types,
+    './NativeDiff': difference
+  });
+  const runningTool = Object.assign(new types.NativeMessage(), {
+    id: 'call-live', callId: 'call-live', role: 'tool', turnKey: 'turn:2',
+    toolName: 'edit', phase: 'result', status: 'success',
+    args: JSON.stringify({ diffs: [
+      { path: 'dir\\same.ts', oldText: 'a', newText: 'b' },
+      { path: 'dir/same.ts', oldText: 'b', newText: 'c' },
+      { path: 'bad.ts', oldText: 4, newText: 'nope' }
+    ] }),
+    metaRaw: '', output: '', error: '', failed: false, outcome: ''
+  });
+  const denied = Object.assign(new types.NativeMessage(), {
+    id: 'call-denied', callId: 'call-denied', role: 'tool', turnKey: 'turn:2',
+    toolName: 'apply_patch', phase: 'result', status: 'success',
+    args: JSON.stringify({ path: 'denied.ts', oldText: null, newText: 'x' }),
+    metaRaw: '', output: 'AUTO_REVIEW_DENIED', error: '', failed: false, outcome: ''
+  });
+  const running = Object.assign(new types.NativeMessage(), {
+    id: 'process-live', role: 'process', turnKey: 'turn:2',
+    children: [runningTool, denied]
+  });
+  const rows = [running];
+  const live = turnChanges.nativeLiveTurnChange(rows, true);
+  assert.ok(live);
+  assert.equal(live.running, true);
+  assert.equal(live.fileCount, 1);
+  assert.equal(live.files[0].path, 'dir\\same.ts');
+  assert.equal(live.files[0].added, 2);
+  assert.equal(live.files[0].removed, 2);
+  assert.equal(turnChanges.nativeLiveTurnChange(rows, false), null);
+  assert.equal(turnChanges.nativeTurnChanges([running, Object.assign(
+    new types.NativeMessage(), {
+      id: 'end-live', role: 'turn-footer', turnKey: 'turn:2',
+      footerOutcome: 'cancelled', outcome: 'cancelled'
+    })])[0].outcome, 'cancelled');
+});
+
 test('non-edit tools never enter diff projection and malformed diff data is inert', () => {
   const { nativeDiff } = load('NativeDiff', {});
   const plan = Object.assign({
