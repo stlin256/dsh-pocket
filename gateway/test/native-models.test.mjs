@@ -1527,6 +1527,9 @@ test('live process and terminal file-card motion contracts stay bounded', () => 
   assert.match(workspace,/scrollEdge\(Edge\.Bottom, \{ velocity: 5200 \}\)/);
   assert.match(workspace,/frame\.type === 'delta' \? 16 : 0/);
   assert.match(workspace,/nativeWithLiveText\(this\.transcriptBaseRows, this\.model\.streamText\)/);
+  assert.match(workspace,/private streamTextPatchDirty: boolean = false/);
+  assert.match(workspace,/frame\.type === 'delta' && frame\.text\.length > 0/);
+  assert.match(workspace,/!forceFull && this\.streamTextPatchDirty \?/);
   assert.match(workspace,/tailOnlyTextUpdate \? 2 : 0/);
   const titleFrame=workspace.indexOf("if (frame.type === 'title')");
   const modelApply=workspace.indexOf('this.model.apply(frame)',titleFrame);
@@ -1983,7 +1986,8 @@ test('stable transcript sources publish bounded tail updates instead of reloadin
 
 test('text-only stream projection patches the live answer without rebuilding history', () => {
   const types = load('NativeSessionModel', {});
-  const { nativeWithLiveText } = load('NativeTranscript', { './NativeSessionModel': types });
+  const { nativeUpdateLiveAssistant, nativeWithLiveText } =
+    load('NativeTranscript', { './NativeSessionModel': types });
   const history = Array.from({ length: 5000 },
     (_, index) => Object.assign(new types.NativeMessage(), {
       id: 'event-' + index, role: 'assistant', text: 'stable', turnKey: 'turn:1'
@@ -1994,4 +1998,10 @@ test('text-only stream projection patches the live answer without rebuilding his
   assert.equal(updated.at(-1).turnKey, 'turn:1');
   assert.equal(history.length, 5000, 'durable source rows remain untouched');
   assert.equal(history.some(row => row.id === 'live-assistant'), false);
+  const live = Object.assign(new types.NativeMessage(), {
+    id: 'live-assistant', role: 'assistant', text: 'old', turnKey: 'turn:11'
+  });
+  const patched = nativeUpdateLiveAssistant(updated.concat([live]), 'new');
+  assert.equal(patched.at(-1).text, 'new');
+  assert.equal(live.text, 'old', 'tail patch must not mutate the rendered source row');
 });

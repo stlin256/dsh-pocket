@@ -184,8 +184,6 @@ export struct NativeWorkspace {
   @State private drawerTranslation: number = 0;
   @State private transcriptViewportHeight: number = 0;
   @State private conversationDockHeight: number = 0;
-  @State private streamText: string = '';
-  @State private streamReasoning: string = '';
   @State private footerCopiedId: string = '';
   @State private taskPlan: NativePlanDocument = new NativePlanDocument();
   @State private turnChanges: NativeTurnChangeSummary[] = [];
@@ -201,11 +199,11 @@ export struct NativeWorkspace {
   private source: NativeListSource<NativeMessage> = new NativeListSource<NativeMessage>();
   private scroller: Scroller = new Scroller();
   private model: NativeSessionModel = new NativeSessionModel();
-  private previousRows: NativeMessage[] = [];
   private transcriptBaseSource: NativeMessage[] | null = null;
   private transcriptBaseRows: NativeMessage[] = [];
   private textProjectionCacheHit: boolean = false;
   private lastRenderedStreamText: string = '';
+  private streamTextPatchDirty: boolean = false;
   private taskPlanSignature: string = '';
   private turnChangesInputSignature: string = '';
   private followTail: boolean = true;
@@ -1274,7 +1272,6 @@ export struct NativeWorkspace {
     this.utilityKnown = capabilities !== undefined;
     this.exportCapabilities = capabilities || new NativeExportCapabilities();
     this.prefetchUtilities(id);
-    this.previousRows = this.model.messages;
     this.turnChanges = [];
     this.turnChangesInputSignature = '';
     this.officialTurnChanges = [];
@@ -1287,7 +1284,6 @@ export struct NativeWorkspace {
     this.liveTurnChanges = new NativeTurnChangeSummary();
     this.liveTurnChangesVisible = false;
     this.renderTranscript();
-    this.streamText = ''; this.streamReasoning = '';
     this.running = false; this.waiting = false; this.retries = 0;
     this.connectionPhase = 'syncing'; this.userHasScrolled = false;
     clearTimeout(this.backToBottomTimer);
@@ -1362,6 +1358,12 @@ export struct NativeWorkspace {
       }
       const wasActive = this.running || this.waiting;
       this.model.apply(frame);
+      if (frame.type === 'delta' && frame.text.length > 0 &&
+        !frame.reasoning && !(frame.toolUpdates || []).length) {
+        this.streamTextPatchDirty = true;
+      } else if (['snapshot', 'event', 'start', 'end', 'state'].includes(frame.type)) {
+        this.streamTextPatchDirty = false;
+      }
       if (frame.type === 'event') {
         this.rememberTurnChangeReferences((frame.journal || []).map((entry: NativeJournalEntry): string => entry.raw));
       } else if (frame.type === 'snapshot') {
@@ -1437,9 +1439,8 @@ export struct NativeWorkspace {
   }
   private paint(): void {
     if (!this.mounted) return;
-    this.previousRows = this.model.messages; this.renderTranscript();
+    this.renderTranscript();
     this.running = this.model.running; this.waiting = this.model.waiting; this.hasMore = this.model.hasMore;
-    this.streamText = this.model.streamText; this.streamReasoning = this.model.streamReasoning;
     if (this.followTail && !this.returningToBottom) {
       setTimeout(() => {
         if (this.mounted && this.followTail && !this.returningToBottom) this.scroller.scrollEdge(Edge.Bottom);
@@ -1529,10 +1530,9 @@ export struct NativeWorkspace {
     return nativeWithLiveText(this.transcriptBaseRows, this.model.streamText);
   }
   private renderTranscript(forceFull: boolean = false): void {
-    const textOnlyStream = this.model.streamTools.length === 0 &&
-      !this.model.streamReasoning.trim() && !!this.model.streamText.trim();
-    const patched: NativeMessage[] | null = !forceFull && textOnlyStream ?
+    const patched: NativeMessage[] | null = !forceFull && this.streamTextPatchDirty ?
       nativeUpdateLiveAssistant(this.visibleRows, this.model.streamText) : null;
+    this.streamTextPatchDirty = false;
     let rows: NativeMessage[];
     let visible: NativeMessage[];
     if (patched) {
@@ -1543,8 +1543,9 @@ export struct NativeWorkspace {
       visible = nativePresentTranscript(rows, this.client.hostSettings.chat(),
         this.model.turnDisclosure, this.model.collapseThrough);
     }
-    const tailOnlyTextUpdate = this.textProjectionCacheHit &&
-      this.lastRenderedStreamText !== this.model.streamText;
+    const tailOnlyTextUpdate = patched !== null ||
+      (this.textProjectionCacheHit &&
+        this.lastRenderedStreamText !== this.model.streamText);
     this.lastRenderedStreamText = this.model.streamText;
     const changeSignature = nativeTurnChangeInputSignature(rows, this.model.streamTools);
     if (changeSignature !== this.turnChangesInputSignature) {

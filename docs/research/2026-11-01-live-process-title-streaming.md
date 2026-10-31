@@ -32,6 +32,10 @@
   updates to roughly 25 frames per second.
 - Every paint calls `nativeTranscript` over the full loaded history, then
   computes turn changes, plan state and a full presentation pass.
+- A turn commonly retains non-empty reasoning while answer prose is still
+  arriving. Treating reasoning presence as "not text-only" would put those
+  answer deltas back on the full-history path, so the scheduler must track the
+  kind of pending delta instead of inferring it from cumulative model state.
 - `NativeTextContent` calls `nativeMarkdownTable` for every text update.
   `NativeInlineText` runs the full inline scanner for every text update.
 - `NativeListSource` compares up to the last 16 rows by serializing their full
@@ -41,6 +45,10 @@
   projection for unchanged durable records, fast no-syntax Markdown paths and
   avoiding per-token decorative animation. Wire ordering and gap detection must
   stay synchronous.
+- The gateway previously paused the upstream for every downstream frame and
+  serialized all writes through one promise chain. High/low watermarks on the
+  downstream socket preserve bounded memory without adding an event-loop turn
+  per token.
 
 ## Session title
 

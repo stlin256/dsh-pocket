@@ -547,23 +547,43 @@ export function createNativeHarness({ upstream, upstreamCookie, publicOrigin, ow
           cursor: active.cursor, attemptId: active.attemptId, nextIndex: active.nextIndex, revision: active.revision });
       }, timing.intervalMs);
       heartbeat.unref();
-      let delivery = Promise.resolve();
-      let queued = 0;
+      const sendHighWater = 256 * 1024;
+      const sendLowWater = 64 * 1024;
+      let upstreamPausedForDelivery = false;
       const send = value => {
         if (client.readyState !== WebSocket.OPEN) return Promise.resolve();
         const text = Buffer.from(JSON.stringify(value));
-        queued++; upstream.pause();
-        // Serialize fragments and await each socket write. A slow phone applies
-        // backpressure to the source instead of losing content or queueing all bytes.
-        delivery = delivery.then(async () => {
-          for (let offset = 0; offset < text.length && client.readyState === WebSocket.OPEN; offset += 32768) {
-            await new Promise((resolve, reject) => client.send(text.subarray(offset, offset + 32768),
-              { binary: false, fin: offset + 32768 >= text.length }, error => error ? reject(error) : resolve()));
-          }
-        }).catch(() => { client.close(1011, 'Delivery interrupted'); }).finally(() => {
-          queued--; if (queued === 0 && upstream.readyState === WebSocket.OPEN) upstream.resume();
-        });
-        return delivery;
+        if (!upstreamPausedForDelivery && (client.bufferedAmount || 0) >= sendHighWater) {
+          upstream.pause();
+          upstreamPausedForDelivery = true;
+        }
+        // ws preserves the ordering of concurrently queued writes. Waiting for a
+        // callback per token would instead serialize every small delta and add a
+        // full event-loop turn to the visible stream. Pause the source only when
+        // the socket's own buffer crosses the high-water mark.
+        const writes = [];
+        for (let offset = 0; offset < text.length && client.readyState === WebSocket.OPEN; offset += 32768) {
+          writes.push(new Promise((resolve, reject) => client.send(
+            text.subarray(offset, offset + 32768),
+            { binary: false, fin: offset + 32768 >= text.length },
+            error => {
+              if (error) {
+                reject(error);
+                return;
+              }
+              if (upstreamPausedForDelivery &&
+                  (client.bufferedAmount || 0) <= sendLowWater &&
+                  upstream.readyState === WebSocket.OPEN) {
+                upstreamPausedForDelivery = false;
+                upstream.resume();
+              }
+              resolve();
+            }
+          )));
+        }
+        return Promise.all(writes)
+          .catch(() => { client.close(1011, 'Delivery interrupted'); })
+          .then(() => undefined);
       };
       const opening = setTimeout(() => { send({ type: 'error', code: 'snapshot-timeout', retryable: true }).finally(() => client.close(1011)); }, timing.openingMs);
       opening.unref();

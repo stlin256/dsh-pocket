@@ -49,7 +49,15 @@ Reduced motion resolves the card expansion and scroll to the final state.
   `model.messages` array. A text-only stream delta clones the cached projection
   and replaces only its live assistant row. Reasoning/tool streams continue
   through the full projector because their grouping can change.
+- Record whether the pending batch contains only assistant text. Once a live
+  assistant row exists, later text-only deltas patch that row even when the same
+  turn still carries completed reasoning or tool rows. Any structural frame
+  invalidates the fast path so the next paint performs a complete projection.
 - Add no animation to token text updates or ordinary tail appends.
+- Gateway delivery uses 256 KiB high and 64 KiB low watermarks on
+  `bufferedAmount`. WebSocket writes remain ordered, while the source pauses
+  only when the socket buffer is saturated. Terminal/error frames retain their
+  write-completion promise so they are not dropped when the connection closes.
 
 ## 5. Markdown work reduction
 

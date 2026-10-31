@@ -98,11 +98,6 @@ function copy(value: NativeMessage): NativeMessage {
   return row;
 }
 
-/** Copy a projected transcript before presentation mutates view-only fields. */
-export function nativeCloneTranscript(rows: NativeMessage[]): NativeMessage[] {
-  return rows.map((row: NativeMessage): NativeMessage => copy(row));
-}
-
 /** Replace only the existing live Assistant row for text-only deltas. */
 export function nativeUpdateLiveAssistant(rows: NativeMessage[], text: string): NativeMessage[] | null {
   if (!text.trim()) return null;
@@ -124,7 +119,7 @@ export function nativeUpdateLiveAssistant(rows: NativeMessage[], text: string): 
  * the live assistant tail row.
  */
 export function nativeWithLiveText(rows: NativeMessage[], text: string): NativeMessage[] {
-  const result = nativeCloneTranscript(rows).filter((row: NativeMessage): boolean =>
+  const result = rows.filter((row: NativeMessage): boolean =>
     row.id !== 'live-assistant');
   if (!text.trim()) return result;
   const reply = new NativeMessage();

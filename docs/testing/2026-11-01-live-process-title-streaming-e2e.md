@@ -14,6 +14,7 @@
 | LPS-10 | Switch sessions while a title projection arrives | A late title cannot overwrite the newly selected session | Pending |
 | LPS-11 | Enable reduced motion | Card expansion and any terminal follow-through resolve directly to the final state | Pending |
 | LPS-12 | Repeat with API 23 | All behavior and latency targets hold with opaque surfaces and no higher-API-only API calls | Pending |
+| LPS-13 | Stream reasoning, then a long prose answer in the same turn | Reasoning remains in its process group while later prose deltas update only the live answer tail at display cadence | Pending |
 
 Device evidence is required before any row becomes Pass. No device was online
 for this implementation.
