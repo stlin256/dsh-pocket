@@ -1,5 +1,9 @@
 const fullText = value => typeof value === 'string' ? value : value === undefined || value === null ? '' : JSON.stringify(value);
 export const sessionIdValid = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value);
+export function normalizeProjectionTitle(value) {
+  if (typeof value !== 'string') return '';
+  return value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+}
 export function textBlocks(content) {
   if (typeof content === 'string') return { text: fullText(content), reasoning: '' };
   const blocks = Array.isArray(content) ? content : [];

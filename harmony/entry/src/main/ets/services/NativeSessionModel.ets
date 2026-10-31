@@ -24,6 +24,8 @@ export class NativeAssistantSegment {
 export class NativeMessage {
   metaRaw: string = ''; contentRaw: string = ''; errorRaw: string = '';
   flat: boolean = false; preview: boolean = true; runningTurn: boolean = false;
+  /** The newest process group whose turn has not ended. View-only. */
+  currentTurn: boolean = false;
   groupedProcess: boolean = false;
   segments: NativeAssistantSegment[] = [];
   eventType: string = ''; sourceKind: string = '';
@@ -268,6 +270,7 @@ export class NativeFrame {
   committedSeq: number = -1;
   text: string = '';
   reasoning: string = '';
+  title: string = '';
   replaceStart: number = -1;
   replaceEnd: number = -1;
   running: boolean = false;

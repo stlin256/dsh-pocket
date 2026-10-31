@@ -79,6 +79,14 @@ function copy(value: NativeMessage): NativeMessage {
   const row = new NativeMessage();
   row.id = value.id; row.seq = value.seq; row.role = value.role; row.label = value.label || '';
   row.text = value.text || ''; row.reasoning = value.reasoning || ''; row.blocks = value.blocks || []; row.images = value.images || [];
+  row.detail = value.detail || '';
+  row.footerCopyText = value.footerCopyText || '';
+  row.footerCopyMessageId = value.footerCopyMessageId || '';
+  row.footerOutcome = value.footerOutcome || '';
+  row.flat = value.flat === true; row.preview = value.preview !== false;
+  row.runningTurn = value.runningTurn === true; row.currentTurn = value.currentTurn === true;
+  row.groupedProcess = value.groupedProcess === true; row.closed = value.closed !== false;
+  row.children = (value.children || []).map((child: NativeMessage): NativeMessage => copy(child));
   row.eventType = value.eventType || ''; row.turn = value.turn ?? -1; row.step = value.step ?? -1; row.time = value.time || 0;
   row.callId = value.callId || ''; row.parentCallId = value.parentCallId || ''; row.rootCallId = value.rootCallId || '';
   row.toolName = value.toolName || ''; row.phase = value.phase || ''; row.failed = value.failed === true;
@@ -88,6 +96,46 @@ function copy(value: NativeMessage): NativeMessage {
   row.renderKey = value.renderKey || '';
   row.metaRaw = value.metaRaw || ''; row.contentRaw = value.contentRaw || ''; row.errorRaw = value.errorRaw || '';
   return row;
+}
+
+/** Copy a projected transcript before presentation mutates view-only fields. */
+export function nativeCloneTranscript(rows: NativeMessage[]): NativeMessage[] {
+  return rows.map((row: NativeMessage): NativeMessage => copy(row));
+}
+
+/** Replace only the existing live Assistant row for text-only deltas. */
+export function nativeUpdateLiveAssistant(rows: NativeMessage[], text: string): NativeMessage[] | null {
+  if (!text.trim()) return null;
+  for (let index = rows.length - 1; index >= 0; index--) {
+    const row = rows[index];
+    if (row.id !== 'live-assistant' || row.role !== 'assistant') continue;
+    const next = copy(row);
+    next.text = text;
+    next.blocks = [];
+    const updated = rows.slice();
+    updated[index] = next;
+    return updated;
+  }
+  return null;
+}
+
+/**
+ * Reuse the durable projection for text-only stream updates and replace only
+ * the live assistant tail row.
+ */
+export function nativeWithLiveText(rows: NativeMessage[], text: string): NativeMessage[] {
+  const result = nativeCloneTranscript(rows).filter((row: NativeMessage): boolean =>
+    row.id !== 'live-assistant');
+  if (!text.trim()) return result;
+  const reply = new NativeMessage();
+  reply.id = 'live-assistant';
+  reply.role = 'assistant';
+  reply.text = text;
+  for (let index = rows.length - 1; index >= 0; index--) {
+    if (rows[index].turnKey) { reply.turnKey = rows[index].turnKey; break; }
+  }
+  result.push(reply);
+  return result;
 }
 export function nativeProcessLead(group: NativeMessage): string {
   const operation = group.children[0];
@@ -324,10 +372,15 @@ export function nativePresentTranscript(rows: NativeMessage[], preferences: Nati
     });
   }
   const open = (key: string): boolean => preferences.mode === 'verbose' || (manual.has(key) ? manual.get(key) === true : deferred.has(key));
+  let currentProcessId = '';
+  rows.forEach((row: NativeMessage): void => {
+    if (row.role === 'process' && !ended.has(row.turnKey)) currentProcessId = row.id;
+  });
   return rows.filter((row: NativeMessage): boolean => {
     if (row.role === 'turn-control') return false;
     if (row.role === 'process') {
       row.runningTurn = !ended.has(row.turnKey) || deferred.has(row.turnKey);
+      row.currentTurn = row.id === currentProcessId;
       row.flat = preferences.mode === 'verbose' || (preferences.mode === 'detailed' && row.runningTurn);
       row.preview = true;
       row.label = '工作过程';

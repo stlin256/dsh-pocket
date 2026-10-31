@@ -109,6 +109,13 @@ function scan(source: string, style: NativeInlineRun, depth: number): NativeInli
 }
 
 export function nativeInlineMarkdown(source: string): NativeInlineRun[] {
+  // Plain prose is the dominant streaming case. Avoid walking and allocating a
+  // run for every token when there is no inline Markdown control character.
+  if (!/[\\`*_\[\]!~]/.test(source)) {
+    const plain = new NativeInlineRun();
+    plain.text = source;
+    return source ? [plain] : [];
+  }
   const rows = scan(source, new NativeInlineRun(), 0);
   rows.forEach((row: NativeInlineRun): void => {
     if (row.code && !row.href) row.href = nativeInlineFileReference(row.text);

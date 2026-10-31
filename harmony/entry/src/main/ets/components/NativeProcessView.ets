@@ -19,12 +19,12 @@ export struct NativeProcessView {
   @State private expanded: boolean = false;
   private disclosureId: string = '';
   private flatApplied: boolean = false;
+  private currentTurnApplied: boolean = false;
   private source: NativeListSource<NativeMessage> = new NativeListSource<NativeMessage>();
 
   aboutToAppear(): void {
     this.flatApplied = this.message.flat;
-    this.expanded = this.message.flat || this.showcaseOpen ||
-      this.disclosures.get(this.message.turnKey + '|' + this.message.id) === true;
+    this.currentTurnApplied = this.message.currentTurn;
     this.changed();
   }
 
@@ -34,11 +34,20 @@ export struct NativeProcessView {
     if (key !== this.disclosureId) {
       this.disclosureId = key;
       this.flatApplied = this.message.flat;
-      this.expanded = this.message.flat || this.showcaseOpen || this.disclosures.get(key) === true;
-    } else if (this.flatApplied !== this.message.flat) {
+      this.currentTurnApplied = this.message.currentTurn;
+      this.expanded = this.resolveExpanded(key);
+    } else if (this.flatApplied !== this.message.flat ||
+      this.currentTurnApplied !== this.message.currentTurn) {
       this.flatApplied = this.message.flat;
-      this.expanded = this.message.flat || this.showcaseOpen || this.disclosures.get(key) === true;
+      this.currentTurnApplied = this.message.currentTurn;
+      this.expanded = this.resolveExpanded(key);
     }
+  }
+
+  private resolveExpanded(key: string): boolean {
+    if (this.message.flat || this.showcaseOpen) return true;
+    if (this.disclosures.has(key)) return this.disclosures.get(key) === true;
+    return this.message.currentTurn;
   }
 
   private toggle(): void {

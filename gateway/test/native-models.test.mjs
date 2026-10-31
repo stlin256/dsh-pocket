@@ -549,6 +549,10 @@ test('native inline markdown preserves literal code and malformed text while sty
   assert.equal(nativeInlineExternalLink('/workspace/docs/readme.md'), false);
   assert.equal(nativeInlineExternalLink('#section'), false);
   assert.equal(nativeInlineExternalLink('ordinary text'), false);
+  const plain = nativeInlineMarkdown('ordinary streaming prose without syntax');
+  assert.equal(plain.length, 1);
+  assert.equal(plain[0].text, 'ordinary streaming prose without syntax');
+  assert.equal(plain[0].bold || plain[0].italic || plain[0].code || plain[0].strike, false);
 });
 
 test('external inline links use a themed clickable SVG image span', () => {
@@ -1084,6 +1088,8 @@ test('model directory paints per-session cache before refresh and updates the sh
 
 test('native GFM tables preserve escaped pipes, alignment and uneven rows', () => {
   const { nativeMarkdownTable } = load('NativeMarkdownTable', {});
+  assert.equal(nativeMarkdownTable('ordinary prose'), null);
+  assert.equal(nativeMarkdownTable('| only one line |'), null);
   const table = nativeMarkdownTable('| Name | Result | Notes |\n| :--- | ---: | :---: |\n| `a|b` | 12\\|34 | **ok** |\n| short |');
   assert.equal(table.headers.join('|'),'Name|Result|Notes');
   assert.equal(table.aligns.join(','),'left,right,center');
@@ -1378,6 +1384,20 @@ test('presentation policies keep direct operations visible while handling four m
   assert.equal(collapsed.some(x=>x.id==='intermediate'),false);assert.equal(collapsed.some(x=>x.id==='answer'),true);
   const live=nativePresentTranscript(nativeTranscript(records.slice(0,-1),true),prefs,new Map());
   assert.equal(live.find(x=>x.role==='process').flat,true);
+  const activeRecords = records.concat([
+    message('human-next','user',7,{turn:2,sourceKind:'user',text:'next'}),
+    message('tool-next','tool',8,{turn:2,phase:'start',callId:'next',toolName:'read',
+      text:'{"file_path":"src/next.ts"}'})
+  ]);
+  const active = nativePresentTranscript(nativeTranscript(activeRecords,true),
+    Object.assign(new preferences.NativeChatPreferences(),{mode:'standard'}),new Map());
+  const activeGroups = active.filter(x=>x.role==='process');
+  assert.equal(activeGroups.length,3);
+  assert.equal(activeGroups.filter(x=>x.currentTurn).length,1);
+  assert.equal(activeGroups.find(x=>x.currentTurn).turnKey,'turn:2');
+  const ended = nativePresentTranscript(nativeTranscript(records,false),
+    Object.assign(new preferences.NativeChatPreferences(),{mode:'standard'}),new Map());
+  assert.equal(ended.filter(x=>x.role==='process').some(x=>x.currentTurn),false);
   assert.equal(nativeReasoningPreview('unfinished line',true),'unfinished line');
   assert.equal(nativeReasoningPreview('**First**\nmore\n\nSecond\nnot complete',true),
     'First more Second not complete');
@@ -1484,6 +1504,35 @@ test('process operations receive unique stable render keys and preview content l
   const listKeys=(length)=>Array.from({length},(_,index)=>'same'+(index===1?'#1':''));
   assert.deepEqual(listKeys(2),['same','same#1'],
     'duplicate caller keys receive the same deterministic suffix used by NativeListSource');
+});
+
+test('live process and terminal file-card motion contracts stay bounded', () => {
+  const processSource=readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/components/NativeProcessView.ets', import.meta.url),'utf8');
+  const resolveBody=processSource.slice(processSource.indexOf('private resolveExpanded('),
+    processSource.indexOf('private toggle()'));
+  assert.ok(resolveBody.indexOf('this.disclosures.has(key)') <
+    resolveBody.indexOf('return this.message.currentTurn'));
+  assert.match(processSource,/this\.currentTurnApplied !== this\.message\.currentTurn/);
+
+  const card=readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/components/NativeTurnChangesView.ets', import.meta.url),'utf8');
+  const toggle=card.slice(card.indexOf('private toggle()'),card.indexOf('private shownFiles()'));
+  assert.ok(toggle.indexOf('this.expanded = !this.expanded') <
+    toggle.indexOf('this.onExpandedChange(this.expanded)'));
+
+  const workspace=readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/components/NativeWorkspace.ets', import.meta.url),'utf8');
+  assert.match(workspace,/terminalCardNearBottom\(message: NativeMessage\)/);
+  assert.match(workspace,/scrollEdge\(Edge\.Bottom, \{ velocity: 5200 \}\)/);
+  assert.match(workspace,/frame\.type === 'delta' \? 16 : 0/);
+  assert.match(workspace,/nativeWithLiveText\(this\.transcriptBaseRows, this\.model\.streamText\)/);
+  assert.match(workspace,/tailOnlyTextUpdate \? 2 : 0/);
+  const titleFrame=workspace.indexOf("if (frame.type === 'title')");
+  const modelApply=workspace.indexOf('this.model.apply(frame)',titleFrame);
+  assert.ok(titleFrame >= 0 && modelApply > titleFrame);
+  assert.match(workspace,/if \(typeof value !== 'string'\) return/);
+  assert.match(workspace,/next\.blank = false/);
 });
 
 test('running activity uses latest still-running start time and exact upstream tool-name categories', () => {
@@ -1925,4 +1974,24 @@ test('stable transcript sources publish bounded tail updates instead of reloadin
   changed.push({ id: 'row-new', text: 'appended' });
   source.set(changed, row => row.id);
   assert.deepEqual(events, ['change:1999', 'add:2000']);
+  events.length = 0;
+  const streamed = changed.map(row => ({ ...row }));
+  streamed[streamed.length - 1].text = 'next token';
+  source.set(streamed, row => row.id, 1);
+  assert.deepEqual(events, ['change:2000']);
+});
+
+test('text-only stream projection patches the live answer without rebuilding history', () => {
+  const types = load('NativeSessionModel', {});
+  const { nativeWithLiveText } = load('NativeTranscript', { './NativeSessionModel': types });
+  const history = Array.from({ length: 5000 },
+    (_, index) => Object.assign(new types.NativeMessage(), {
+      id: 'event-' + index, role: 'assistant', text: 'stable', turnKey: 'turn:1'
+    }));
+  const updated = nativeWithLiveText(history, 'hello');
+  assert.equal(updated.length, history.length + 1);
+  assert.equal(updated.at(-1).text, 'hello');
+  assert.equal(updated.at(-1).turnKey, 'turn:1');
+  assert.equal(history.length, 5000, 'durable source rows remain untouched');
+  assert.equal(history.some(row => row.id === 'live-assistant'), false);
 });

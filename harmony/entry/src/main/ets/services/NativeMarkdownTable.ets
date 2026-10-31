@@ -36,6 +36,9 @@ function alignment(value: string): string {
 }
 
 export function nativeMarkdownTable(source: string): NativeMarkdownTable | null {
+  // Tables require both a pipe and a second physical line. Streaming prose can
+  // avoid normalizing and splitting the complete accumulated answer otherwise.
+  if (source.indexOf('|') < 0 || source.indexOf('\n') < 0) return null;
   const lines = source.replace(/\r\n?/g, '\n').trim().split('\n');
   if (lines.length < 2) return null;
   const headers = cells(lines[0]);

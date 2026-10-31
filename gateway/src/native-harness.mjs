@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import WebSocket, { WebSocketServer } from 'ws';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { normalizeFollow, normalizedHistory, sessionIdValid } from './native-protocol.mjs';
+import {
+  normalizeFollow,
+  normalizeProjectionTitle,
+  normalizedHistory,
+  sessionIdValid
+} from './native-protocol.mjs';
 
 export function nativeHeartbeatPolicy(profile = 'foreground') {
   return profile === 'background' ?
@@ -589,6 +594,10 @@ export function createNativeHarness({ upstream, upstreamCookie, publicOrigin, ow
         questionSeq = seq;
         send({ type: 'questions', questions: Array.isArray(value?.active) ? value.active.filter(item => item.state === 'continued') : [] });
       };
+      const sessionTitle = value => {
+        const title = normalizeProjectionTitle(value);
+        if (title) send({ type: 'title', title });
+      };
       const endInteraction = eventId => {
         clearTimeout(connection.pending.get(eventId)?.timer);
         connection.pending.delete(eventId);
@@ -625,11 +634,23 @@ export function createNativeHarness({ upstream, upstreamCookie, publicOrigin, ow
             const value = frame.value;
             if (value?.type === 'baseline') {
               const baseline = value.value?.projections?.[id];
-              if (baseline) questions(baseline.values?.userQuestions, baseline.asOfSeq ?? -1);
-            } else if (value?.type === 'projection' && value.sessionId === id && value.key === 'userQuestions') questions(value.value, value.seq);
+              if (baseline) {
+                questions(baseline.values?.userQuestions, baseline.asOfSeq ?? -1);
+                sessionTitle(baseline.values?.title);
+              }
+            } else if (value?.type === 'projection' && value.sessionId === id) {
+              if (value.key === 'userQuestions') questions(value.value, value.seq);
+              else if (value.key === 'title') sessionTitle(value.value);
+            }
           } else if (frame.streamId === 'projections') {
-            if (frame.value?.type === 'ready') rpc('projections', { sessionId: id }).then(value => questions(value?.values?.userQuestions, value?.asOfSeq ?? -1)).catch(() => {});
-            else if (frame.value?.type === 'projection' && frame.value.key === 'userQuestions') questions(frame.value.value, frame.value.seq);
+            if (frame.value?.type === 'ready') rpc('projections', { sessionId: id }).then(value => {
+              questions(value?.values?.userQuestions, value?.asOfSeq ?? -1);
+              sessionTitle(value?.values?.title);
+            }).catch(() => {});
+            else if (frame.value?.type === 'projection') {
+              if (frame.value.key === 'userQuestions') questions(frame.value.value, frame.value.seq);
+              else if (frame.value.key === 'title') sessionTitle(frame.value.value);
+            }
           } else if (frame.streamId?.startsWith('wait:')) {
             const eventId = frame.streamId.slice(5), pending = connection.pending.get(eventId);
             const duration = frame.value?.remainingMs;

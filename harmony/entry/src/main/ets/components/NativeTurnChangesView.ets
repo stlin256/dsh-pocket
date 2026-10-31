@@ -118,6 +118,7 @@ export struct NativeTurnChangesCard {
   @Prop canCopy: boolean = true;
   onOpenFile: (path: string) => void = (_path: string): void => {};
   onCopy: () => void = (): void => {};
+  onExpandedChange: (expanded: boolean) => void = (_expanded: boolean): void => {};
   @StorageLink('nativeDark') private dark: boolean = false;
   @State private expanded: boolean = false;
   private currentTurn: string = '';
@@ -136,6 +137,7 @@ export struct NativeTurnChangesCard {
     if (this.summary.files.length <= 3) return;
     NativeMotion.disclosure(this.getUIContext(), (): void => {
       this.expanded = !this.expanded;
+      this.onExpandedChange(this.expanded);
     });
   }
 

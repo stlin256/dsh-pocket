@@ -6,7 +6,7 @@ import { once } from 'node:events';
 import WebSocket, { WebSocketServer } from 'ws';
 import { openStore } from '../src/store.mjs';
 import { createApp } from '../src/app.mjs';
-import { normalizeFollow, normalizedHistory, richBlocks, normalizeRecord } from '../src/native-protocol.mjs';
+import { normalizeFollow, normalizeProjectionTitle, normalizedHistory, richBlocks, normalizeRecord } from '../src/native-protocol.mjs';
 import { changedFilesSummary, nativeHeartbeatPolicy } from '../src/native-harness.mjs';
 
 const origin = 'https://dsh.example.com';
@@ -140,13 +140,23 @@ async function setup(t, options = {}) {
           ws.send(JSON.stringify({type:'item',streamId:frame.streamId,value:{type:'ready',clientId:'client-generation',host:{home:'~'}}}));
           return;
         }
+        if (frame.endpoint === 'session/observeProjections' && !options.modern) {
+          assert.deepEqual(frame.payload, {args:{request:{sessionId:'session'}}});
+          ws.send(JSON.stringify({type:'item',streamId:frame.streamId,value:{type:'ready'}}));
+          ws.send(JSON.stringify({type:'item',streamId:frame.streamId,value:{
+            type:'projection',key:'title',value:'Initial live title',seq:1
+          }}));
+          return;
+        }
         if (options.modern && ['session/observeState', 'session/observeProjections'].includes(frame.endpoint)) {
           ws.send(JSON.stringify({ type: 'error', streamId: frame.streamId, error: { code: 'gateway/invocation-unavailable' } })); return;
         }
         if (frame.endpoint === 'session/control') {
           assert.deepEqual(frame.payload, { args: {} });
           ws.send(JSON.stringify({ type: 'item', streamId: frame.streamId, value: { type: 'baseline', value: {
-            projections: { session: { asOfSeq: 0, values: { userQuestions: { active: [] } } } }
+            projections: { session: { asOfSeq: 0, values: {
+              userQuestions: { active: [] }, title: 'Initial control title'
+            } } }
           } } })); return;
         }
         assert.equal(frame.payload.args.request.sessionId || frame.payload.args.request.address.sessionId,'session');
@@ -185,7 +195,9 @@ async function setup(t, options = {}) {
     });req.on('error',reject);req.end(bytes);
   });
   const connect=(headers={})=>new WebSocket(`ws://127.0.0.1:${server.address().port}/pocket/native/live?sessionId=session`,{headers:{Host:'dsh.example.com',Origin:origin,Cookie:cookie,...headers}});
-  return {call,upload,calls,uploads,connect,openings,db,emit: value => { for (const ws of upstreamWS.clients) ws.send(JSON.stringify({type:'item',streamId:'interactions',value})); }};
+  return {call,upload,calls,uploads,connect,openings,db,
+    emit: value => { for (const ws of upstreamWS.clients) ws.send(JSON.stringify({type:'item',streamId:'interactions',value})); },
+    emitProjection: (streamId, value) => { for (const ws of upstreamWS.clients) ws.send(JSON.stringify({type:'item',streamId,value})); }};
 }
 
 test('modern Harness control stream replaces removed per-session observers without dropping history', async t => {
@@ -204,7 +216,18 @@ test('modern Harness control stream replaces removed per-session observers witho
   });
   assert.equal(openings.filter(x => x.endpoint === 'session/control').length, 1);
   assert.equal(frames.some(x => x.type === 'error'), false);
+  assert.equal(frames.find(x => x.type === 'title')?.title, 'Initial control title');
   ws.close();
+});
+
+test('native live forwards modern title projections and ignores malformed values', async t => {
+  const {frames,until,emitProjection} = await live(t);
+  await until(() => frames.some(frame => frame.type === 'title' && frame.title === 'Initial live title'));
+  emitProjection('projections', {type:'projection',key:'title',value:'Updated live title',seq:2});
+  await until(() => frames.some(frame => frame.type === 'title' && frame.title === 'Updated live title'));
+  emitProjection('projections', {type:'projection',key:'title',value:'   ',seq:3});
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(frames.filter(frame => frame.type === 'title').length, 2);
 });
 
 test('header utilities export complete Host content and profile writes use named revision arguments', async t => {
@@ -476,6 +499,9 @@ test('native stream rejects foreign origins and client command injection',async 
 });
 
 test('normalization respects history replacements and produces native code blocks',()=>{
+  assert.equal(normalizeProjectionTitle('  generated\u0000 title  '),'generated title');
+  assert.equal(normalizeProjectionTitle('x'.repeat(200)).length,160);
+  assert.equal(normalizeProjectionTitle({title:'invalid'}),'');
   const history=normalizedHistory([
     {type:'event',event:{seq:1,type:'user/message',data:{content:[{type:'text',text:'old'}]}}},
     {type:'event',event:{seq:2,type:'user/message',surfaceOp:{op:'replace',startSeq:1,endSeq:1},data:{content:[{type:'text',text:'new'}]}}}

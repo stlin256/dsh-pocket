@@ -7,7 +7,12 @@ export class NativeListSource<T> implements IDataSource {
   getData(index: number): T { return this.rows[index]; }
   registerDataChangeListener(listener: DataChangeListener): void { if (!this.listeners.includes(listener)) this.listeners.push(listener); }
   unregisterDataChangeListener(listener: DataChangeListener): void { this.listeners = this.listeners.filter((item: DataChangeListener) => item !== listener); }
-  set(rows: T[], keyOf?: (item: T) => string): void {
+  /**
+   * `changedTail` is a correctness-preserving fast path for high-frequency
+   * stream paints: when the caller knows only the final rows changed, avoid
+   * serializing cumulative streamed text just to rediscover those indices.
+   */
+  set(rows: T[], keyOf?: (item: T) => string, changedTail: number = 0): void {
     const previous = this.rows;
     const previousKeys = this.keys;
     const key = (item: T): string => keyOf ? keyOf(item) : JSON.stringify(item);
@@ -23,13 +28,18 @@ export class NativeListSource<T> implements IDataSource {
     this.rows = rows.slice();
     this.keys = nextKeys;
     this.listeners.forEach((listener: DataChangeListener) => {
+      const stableKeys = rows.length === previous.length &&
+        nextKeys.every((value: string, index: number): boolean => value === previousKeys[index]);
+      if (stableKeys && changedTail > 0) {
+        const start = Math.max(0, rows.length - changedTail);
+        for (let index = start; index < rows.length; index++) listener.onDataChange(index);
+        return;
+      }
       if (rows.length === previous.length + 1 &&
         previousKeys.every((value: string, index: number): boolean => value === nextKeys[index])) {
         listener.onDataAdded(rows.length - 1);
         return;
       }
-      const stableKeys = rows.length === previous.length &&
-        nextKeys.every((value: string, index: number): boolean => value === previousKeys[index]);
       if (stableKeys) {
         // Streaming deltas are appended near the tail. Compare that bounded
         // window instead of serializing a multi-thousand-row transcript on

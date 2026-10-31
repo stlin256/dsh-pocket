@@ -16,7 +16,12 @@ import { NativeModelPicker } from './NativeModelPicker';
 import { NativeMessageView } from './NativeMessageView';
 import { DSHIcon } from './DSHIcon';
 import { NativeProcessView } from './NativeProcessView';
-import { nativeTranscript, nativePresentTranscript } from '../services/NativeTranscript';
+import {
+  nativeTranscript,
+  nativePresentTranscript,
+  nativeUpdateLiveAssistant,
+  nativeWithLiveText
+} from '../services/NativeTranscript';
 import { NativeWorkspacePicker } from './NativeWorkspacePicker';
 import { BackgroundMonitor } from '../services/BackgroundMonitor';
 import { NativeActionMenu } from './NativeActionMenu';
@@ -197,6 +202,10 @@ export struct NativeWorkspace {
   private scroller: Scroller = new Scroller();
   private model: NativeSessionModel = new NativeSessionModel();
   private previousRows: NativeMessage[] = [];
+  private transcriptBaseSource: NativeMessage[] | null = null;
+  private transcriptBaseRows: NativeMessage[] = [];
+  private textProjectionCacheHit: boolean = false;
+  private lastRenderedStreamText: string = '';
   private taskPlanSignature: string = '';
   private turnChangesInputSignature: string = '';
   private followTail: boolean = true;
@@ -254,7 +263,7 @@ export struct NativeWorkspace {
     }, 0);
   }
 
-  private preferencesChanged(): void { this.steer = this.client.hostSettings.chat().busyEnter === 'steer'; this.renderTranscript(); }
+  private preferencesChanged(): void { this.steer = this.client.hostSettings.chat().busyEnter === 'steer'; this.renderTranscript(true); }
   private modelCaptionChanged(): void { this.modelCaption = this.client.modelDirectory.caption(this.selected); }
 
   private navigationChanged(): void {
@@ -343,6 +352,24 @@ export struct NativeWorkspace {
       this.selected, this.collapsedGroups, this.interactionTimes);
     this.visibleSessionCount = visible.filter((row: NativeWorkspaceRow) => !row.group).length;
     this.sessionSource.set(visible, (row: NativeWorkspaceRow): string => row.key);
+  }
+  private applyLiveTitle(id: string, value: string): void {
+    if (typeof value !== 'string') return;
+    const title = value.replace(/[\u0000-\u001f\u007f]/g, ' ')
+      .replace(/\s+/g, ' ').trim().slice(0, 160);
+    if (!title || !this.sessions.some((item: NativeSession): boolean => item.id === id)) return;
+    this.sessions = this.sessions.map((item: NativeSession): NativeSession => {
+      if (item.id !== id || item.title === title) return item;
+      const next = new NativeSession();
+      next.titleKnown = true; next.origin = item.origin; next.parentSessionId = item.parentSessionId;
+      next.agentPreset = item.agentPreset; next.id = item.id; next.title = title;
+      next.blank = false; next.cwd = item.cwd; next.running = item.running;
+      next.updatedAt = item.updatedAt;
+      return next;
+    });
+    if (this.selected === id) this.title = title;
+    this.sessionsChanged();
+    NativeMetadataCache.save(this.context, this.client.cacheKey(), this.sessions, this.workspaces);
   }
   aboutToAppear(): void {
     this.mounted = true;
@@ -1321,6 +1348,10 @@ export struct NativeWorkspace {
       if (frame.type === 'interaction-ended') {
         this.interactions = this.interactions.filter((item: NativeFrame) => item.eventId !== frame.eventId); return;
       }
+      if (frame.type === 'title') {
+        this.applyLiveTitle(id, frame.title);
+        return;
+      }
       if (frame.type === 'error') {
         // Preserve the server's close/reconnect lifecycle instead of throwing
         // through the WebSocket parser and misreporting an invalid JSON frame.
@@ -1358,7 +1389,12 @@ export struct NativeWorkspace {
         // same pump; it is no longer required to restart a failed page.
         setTimeout((): void => { this.startHistoryDrain(true); }, 80);
       }
-      if (this.paintTimer < 0) this.paintTimer = setTimeout(() => { this.paintTimer = -1; this.paint(); }, 40);
+      if (this.paintTimer < 0) {
+        this.paintTimer = setTimeout(() => {
+          this.paintTimer = -1;
+          this.paint();
+        }, frame.type === 'delta' ? 16 : 0);
+      }
     }, (reason: string): void => {
       console.error('DSH Harmony live socket ended: ' + reason);
       this.reconnect(id);
@@ -1476,8 +1512,40 @@ export struct NativeWorkspace {
         });
     }
   }
-  private renderTranscript(): void {
-    const rows = nativeTranscript(this.model.messages, this.model.running, this.model.streamTools, this.model.streamReasoning, this.model.streamText);
+  private projectTranscriptRows(): NativeMessage[] {
+    const hasLiveProcess = this.model.streamTools.length > 0 || !!this.model.streamReasoning.trim();
+    if (hasLiveProcess) {
+      this.textProjectionCacheHit = false;
+      return nativeTranscript(this.model.messages, this.model.running,
+        this.model.streamTools, this.model.streamReasoning, this.model.streamText);
+    }
+    if (this.transcriptBaseSource !== this.model.messages) {
+      this.textProjectionCacheHit = false;
+      this.transcriptBaseSource = this.model.messages;
+      this.transcriptBaseRows = nativeTranscript(this.model.messages, this.model.running, []);
+    } else {
+      this.textProjectionCacheHit = true;
+    }
+    return nativeWithLiveText(this.transcriptBaseRows, this.model.streamText);
+  }
+  private renderTranscript(forceFull: boolean = false): void {
+    const textOnlyStream = this.model.streamTools.length === 0 &&
+      !this.model.streamReasoning.trim() && !!this.model.streamText.trim();
+    const patched: NativeMessage[] | null = !forceFull && textOnlyStream ?
+      nativeUpdateLiveAssistant(this.visibleRows, this.model.streamText) : null;
+    let rows: NativeMessage[];
+    let visible: NativeMessage[];
+    if (patched) {
+      rows = patched;
+      visible = patched;
+    } else {
+      rows = this.projectTranscriptRows();
+      visible = nativePresentTranscript(rows, this.client.hostSettings.chat(),
+        this.model.turnDisclosure, this.model.collapseThrough);
+    }
+    const tailOnlyTextUpdate = this.textProjectionCacheHit &&
+      this.lastRenderedStreamText !== this.model.streamText;
+    this.lastRenderedStreamText = this.model.streamText;
     const changeSignature = nativeTurnChangeInputSignature(rows, this.model.streamTools);
     if (changeSignature !== this.turnChangesInputSignature) {
       this.turnChangesInputSignature = changeSignature;
@@ -1512,9 +1580,9 @@ export struct NativeWorkspace {
         this.taskPlan = plan;
       }
     }
-    const visible = nativePresentTranscript(rows, this.client.hostSettings.chat(), this.model.turnDisclosure, this.model.collapseThrough);
     this.visibleRows = visible;
-    this.source.set(visible, (row: NativeMessage): string => row.id);
+    this.source.set(visible, (row: NativeMessage): string => row.id,
+      tailOnlyTextUpdate ? 2 : 0);
   }
   private turnChangeFor(turnKey: string): NativeTurnChangeSummary {
     const official = this.officialTurnChanges.find((summary: NativeTurnChangeSummary): boolean =>
@@ -1871,6 +1939,39 @@ export struct NativeWorkspace {
       if (this.mounted && !this.followTail) this.backToBottomVisible = true;
     }, 100);
   }
+  private transcriptIndex(message: NativeMessage): number {
+    const index = this.visibleRows.findIndex((row: NativeMessage): boolean => row.id === message.id);
+    return index < 0 ? -1 : index + (this.hasMore ? 1 : 0);
+  }
+  private terminalCardNearBottom(message: NativeMessage): boolean {
+    const rowIndex = this.visibleRows.findIndex((row: NativeMessage): boolean => row.id === message.id);
+    if (rowIndex < 0 || rowIndex !== this.visibleRows.length - 1) return false;
+    if (this.isScrollAtEnd()) return true;
+    try {
+      const rect = this.scroller.getItemRect(this.transcriptIndex(message));
+      const viewport = Math.max(1, this.transcriptViewportHeight);
+      return rect.y < viewport && rect.y + rect.height >= viewport - 96;
+    } catch (_) {
+      return false;
+    }
+  }
+  private followTerminalCardExpansion(message: NativeMessage): void {
+    if (!this.terminalCardNearBottom(message)) return;
+    clearTimeout(this.returnToBottomTimer);
+    this.followTail = true;
+    this.returningToBottom = true;
+    setTimeout((): void => {
+      if (!this.mounted || !this.returningToBottom ||
+        this.visibleRows[this.visibleRows.length - 1]?.id !== message.id) return;
+      try {
+        if (NativeMotion.enabled()) this.scroller.scrollEdge(Edge.Bottom, { velocity: 5200 });
+        else this.scroller.scrollToIndex(this.transcriptIndex(message), false, ScrollAlign.END);
+      } catch (_) {}
+    }, 0);
+    this.returnToBottomTimer = setTimeout((): void => {
+      if (this.mounted && this.returningToBottom) this.settleScrollTail();
+    }, NativeMotion.enabled() ? 900 : 0);
+  }
   private returnToBottom(): void {
     if (!this.selected || !this.visibleRows.length) return;
     clearTimeout(this.backToBottomTimer);
@@ -2187,6 +2288,9 @@ export struct NativeWorkspace {
                     copied: this.footerCopiedId === message.footerCopyMessageId,
                     canCopy: !!message.footerCopyText,
                     onOpenFile: (path: string): void => { this.openTurnChangeFile(path); },
+                    onExpandedChange: (expanded: boolean): void => {
+                      if (expanded) this.followTerminalCardExpansion(message);
+                    },
                     onCopy: (): void => {
                       this.copyFooter(message.footerCopyText, message.footerCopyMessageId);
                     }
