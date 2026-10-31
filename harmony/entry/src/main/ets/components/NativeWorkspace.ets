@@ -2285,6 +2285,7 @@ export struct NativeWorkspace {
                 if (this.turnChangeFor(message.turnKey).fileCount > 0) {
                   NativeTurnChangesCard({
                     summary: this.turnChangeFor(message.turnKey),
+                    workspaceRoot: this.workspaceRootFor(this.selected),
                     maxExpandedHeight: Math.max(180, this.transcriptViewportHeight * 0.45),
                     copied: this.footerCopiedId === message.footerCopyMessageId,
                     canCopy: !!message.footerCopyText,

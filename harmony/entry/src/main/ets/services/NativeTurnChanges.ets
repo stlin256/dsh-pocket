@@ -10,6 +10,12 @@ export class NativeTurnFileChange {
   oversized: boolean = false;
 }
 
+export class NativeTurnFilePresentation {
+  relativePath: string = '';
+  directory: string = '';
+  name: string = '';
+}
+
 export class NativeTurnChangeSummary {
   turnKey: string = '';
   files: NativeTurnFileChange[] = [];
@@ -41,7 +47,61 @@ function countableMutation(tool: NativeMessage): boolean {
 }
 
 function normalizedPath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/\/+/g, '/');
+  return (path || '').replace(/\\/g, '/').replace(/\/+/g, '/');
+}
+
+function withoutTrailingSlash(path: string): string {
+  if (path === '/') return path;
+  return path.replace(/\/+$/, '');
+}
+
+function absolutePath(path: string): boolean {
+  return path.startsWith('/') || /^[A-Za-z]:\//.test(path);
+}
+
+function pathName(path: string): string {
+  const clean = withoutTrailingSlash(path);
+  const slash = clean.lastIndexOf('/');
+  return slash >= 0 ? clean.slice(slash + 1) : clean;
+}
+
+function workspaceRelative(path: string, workspaceRoot: string): string {
+  const normalized = normalizedPath(path).trim();
+  const root = withoutTrailingSlash(normalizedPath(workspaceRoot).trim());
+  if (!root) return absolutePath(normalized) ? '' : normalized;
+  if (root === '/') {
+    return normalized.startsWith('/') ? normalized.slice(1) : normalized;
+  }
+  const windowsRoot = /^[A-Za-z]:\//.test(root);
+  const comparablePath = windowsRoot ? normalized.toLowerCase() : normalized;
+  const comparableRoot = windowsRoot ? root.toLowerCase() : root;
+  if (comparablePath === comparableRoot) return '';
+  if (comparablePath.startsWith(comparableRoot + '/')) {
+    return normalized.slice(root.length + 1);
+  }
+  return absolutePath(normalized) ? '' : normalized;
+}
+
+/**
+ * Present a changed file as workspace-relative directory plus filename.
+ * Host paths remain private unless they fall below the current workspace.
+ */
+export function nativeTurnFilePresentation(path: string, workspaceRoot: string,
+  display: string = ''): NativeTurnFilePresentation {
+  const shownPath = normalizedPath(display).trim();
+  let relativePath = workspaceRelative(path, workspaceRoot).trim();
+  if (!relativePath && shownPath && !absolutePath(shownPath)) relativePath = shownPath;
+  while (relativePath.startsWith('./')) relativePath = relativePath.slice(2);
+  if (absolutePath(relativePath)) relativePath = pathName(relativePath);
+  if (!relativePath) relativePath = pathName(normalizedPath(path).trim());
+  if (!relativePath) relativePath = pathName(shownPath);
+  const shownName = shownPath ? pathName(shownPath) : '';
+  const slash = relativePath.lastIndexOf('/');
+  const presentation = new NativeTurnFilePresentation();
+  presentation.relativePath = relativePath;
+  presentation.directory = slash >= 0 ? relativePath.slice(0, slash + 1) : '';
+  presentation.name = shownName || relativePath.slice(slash + 1);
+  return presentation;
 }
 
 function documentFiles(document: NativeDiffDocument): NativeTurnFileChange[] {

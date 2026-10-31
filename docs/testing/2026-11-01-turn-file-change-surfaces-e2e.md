@@ -7,10 +7,10 @@ without a physical HarmonyOS device.
 
 Automated evidence in this change:
 
-- Gateway suite: 130 tests passed, including the official `changes.summary`
-  bridge, turn-change aggregation and source contracts for the final card,
-  live pill, reusable bottom dock, read-only file opening and reduced-motion
-  handling.
+- Gateway suite: 134 tests passed, including the official `changes.summary`
+  bridge, turn-change aggregation, workspace-relative filename-first
+  presentation and source contracts for the narrower final card, live pill,
+  reusable bottom dock, read-only file opening and reduced-motion handling.
 - `default` Release build: passed.
 - `store` Release build: passed.
 - Device evidence: unavailable for this run; every row remains Pending.
@@ -33,4 +33,5 @@ Automated evidence in this change:
 | TFC-14 | Official summary privacy | Native UI receives no Host cwd, snapshot identity, credential or unvalidated summary fields | Pending |
 | TFC-15 | Return from a conversation-opened file | From a card row or inline file link, file A -> linked file B -> Back returns to A; the next Back returns to the conversation without revealing A's parent directory | Pending |
 | TFC-16 | Conditional Dock blur | With only the composer, there is no full-width background. Adding a live-change pill or attachment reveals a top-transparent gradient blur with no fixed black or opaque strip in light and dark mode | Pending |
+| TFC-17 | Long changed-file row | The card clears the transcript scrollbar; a deep absolute Host path renders as a workspace-relative directory plus filename, the filename gets the larger share of width, and `+/-` metrics stay fixed in light and dark mode | Pending |
 

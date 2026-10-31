@@ -754,6 +754,59 @@ test('turn file changes aggregate only settled explicit mutations by stable path
   assert.equal(turnChanges.nativeTurnChangeFor(summaries, 'turn:missing'), null);
 });
 
+test('turn change file presentation keeps a workspace-relative directory and prioritizes the filename', () => {
+  const types = load('NativeSessionModel', {});
+  const difference = load('NativeDiff', {});
+  const turnChanges = load('NativeTurnChanges', {
+    './NativeSessionModel': types,
+    './NativeDiff': difference
+  });
+  const posix = turnChanges.nativeTurnFilePresentation(
+    '/home/user/project/harmony/entry/NativeFileBrowser.ets',
+    '/home/user/project/',
+    'NativeFileBrowser.ets'
+  );
+  assert.equal(posix.relativePath, 'harmony/entry/NativeFileBrowser.ets');
+  assert.equal(posix.directory, 'harmony/entry/');
+  assert.equal(posix.name, 'NativeFileBrowser.ets');
+
+  const windows = turnChanges.nativeTurnFilePresentation(
+    'C:\\Users\\me\\project\\src\\features\\editor.ts',
+    'c:\\users\\me\\project',
+    'editor.ts'
+  );
+  assert.equal(windows.relativePath, 'src/features/editor.ts');
+  assert.equal(windows.directory, 'src/features/');
+  assert.equal(windows.name, 'editor.ts');
+
+  const relative = turnChanges.nativeTurnFilePresentation(
+    'harmony/entry/NativeWorkspace.ets',
+    '/home/user/project',
+    'NativeWorkspace.ets'
+  );
+  assert.equal(relative.relativePath, 'harmony/entry/NativeWorkspace.ets');
+  assert.equal(relative.directory, 'harmony/entry/');
+
+  const outsideRoot = turnChanges.nativeTurnFilePresentation(
+    '/opt/private/build/output.bin',
+    '/home/user/project',
+    'src/generated.ts'
+  );
+  assert.equal(outsideRoot.relativePath, 'src/generated.ts');
+  assert.equal(outsideRoot.directory, 'src/');
+  assert.equal(outsideRoot.name, 'generated.ts');
+
+  const filenameOnly = turnChanges.nativeTurnFilePresentation(
+    '/opt/private/build/output.bin',
+    '/home/user/project',
+    'output.bin'
+  );
+  assert.equal(filenameOnly.relativePath, 'output.bin');
+  assert.equal(filenameOnly.directory, '');
+  assert.equal(filenameOnly.name, 'output.bin');
+  assert.equal(filenameOnly.relativePath.includes('/opt/private'), false);
+});
+
 test('live turn file changes require an active unfinished turn and ignore malformed diffs', () => {
   const types = load('NativeSessionModel', {});
   const difference = load('NativeDiff', {});
@@ -880,11 +933,17 @@ test('turn change card and bottom live control keep compact ownership and motion
   assert.match(view, /this\.summary\.files\.slice\(0, 3\)/);
   assert.match(view, /再显示 ' \+ \(this\.summary\.files\.length - 3\) \+ ' 个文件/);
   assert.match(view, /onOpenFile: \(path: string\) => void/);
+  assert.match(view, /nativeTurnFilePresentation/);
+  assert.match(view, /Text\(this\.fileDirectory\(file\)\)/);
+  assert.match(view, /Text\(this\.fileName\(file\)\)/);
+  assert.match(view, /layoutWeight\(this\.fileDirectory\(file\) \? 2 : 1\)/);
+  assert.match(view, /\.width\('96%'\)/);
   assert.match(view, /duration: 170/);
   assert.match(view, /translate\(\{ y: -7 \* this\.progress \}\)/);
   assert.match(view, /!NativeMotion\.enabled\(\)/);
   assert.doesNotMatch(view, /撤销|查看变更/);
   assert.match(workspace, /NativeTurnChangesCard\(\{[\s\S]{0,500}onOpenFile:[\s\S]{0,180}this\.openTurnChangeFile/);
+  assert.match(workspace, /NativeTurnChangesCard\(\{[\s\S]{0,180}workspaceRoot: this\.workspaceRootFor\(this\.selected\)/);
   assert.match(workspace, /request\.previewOnly = true/);
   assert.match(workspace, /previewOnly: this\.fileView\.previewOnly/);
   assert.match(workspace, /NativeTurnChangePill\(\{[\s\S]{0,180}liveTurnChanges/);

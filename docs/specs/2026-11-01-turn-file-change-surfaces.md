@@ -52,6 +52,16 @@ Rules:
 9. Summary order follows first turn appearance and file first appearance.
 10. The projection never mutates `NativeMessage`, journal data or cache rows.
 
+`nativeTurnFilePresentation(path, workspaceRoot, display)` produces the
+view-only path projection:
+
+1. Slash variants are normalized for display.
+2. A path below `workspaceRoot` becomes workspace-relative.
+3. A relative path is preserved. An absolute path outside the known workspace
+   falls back to a non-absolute `display` path, then to the basename.
+4. `directory` includes its trailing slash; `name` is the final filename.
+5. The original `path` remains the value passed to the read-only file preview.
+
 The workspace derives and stores:
 
 - `turnChanges`: tool-derived fallback summaries keyed by stable `turnKey`.
@@ -112,9 +122,13 @@ For turns without file changes, keep the existing compact footer row.
 The card:
 
 - uses one rounded themed surface with a 0.5vp outline;
+- stays at 96% of the available transcript width to clear the scrollbar;
 - puts an edit glyph, `已编辑 N 个文件`, aggregate numbers and the final-answer
   copy action in one header row;
 - shows at most three file rows while collapsed;
+- renders each file as a secondary workspace-relative directory followed by a
+  higher-priority filename, then fixed diff metrics; the directory receives the
+  smaller layout weight so it truncates first;
 - renders a `再显示 N 个文件`/`收起文件` control for larger sets;
 - caps expanded contents to `min(260vp, 45% transcript viewport height)` in an
   internal vertical scroll;

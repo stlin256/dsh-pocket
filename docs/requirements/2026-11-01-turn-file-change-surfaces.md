@@ -16,6 +16,11 @@ The live control hides when the turn completes or stops.
 - It contains a readable, deterministic list of the changed files. The first
   three files are visible while collapsed; a row such as `再显示 22 个文件`
   expands the list.
+- File rows show the workspace-relative directory and prioritize the filename.
+  A long directory compresses first while the `+added/-removed` metrics remain
+  fixed and legible.
+- The completed card stays slightly inset from the transcript's right edge so
+  it does not crowd or overlap the scrollbar.
 - A file row opens that Host workspace file in the existing read-only native
   file preview.
 - A file opened directly from a conversation file link or the completed-turn

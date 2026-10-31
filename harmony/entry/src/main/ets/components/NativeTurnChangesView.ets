@@ -1,6 +1,7 @@
 import { DSHIcon } from './DSHIcon';
 import { NativeMotion } from '../services/NativeMotion';
 import {
+  nativeTurnFilePresentation,
   NativeTurnChangeSummary,
   NativeTurnFileChange
 } from '../services/NativeTurnChanges';
@@ -113,6 +114,7 @@ export struct NativeTurnChangePill {
 export struct NativeTurnChangesCard {
   @Prop @Watch('summaryChanged') summary: NativeTurnChangeSummary =
     new NativeTurnChangeSummary();
+  @Prop workspaceRoot: string = '';
   @Prop maxExpandedHeight: number = 260;
   @Prop copied: boolean = false;
   @Prop canCopy: boolean = true;
@@ -162,15 +164,35 @@ export struct NativeTurnChangesCard {
     return '+' + formattedCount(file.added) + '  -' + formattedCount(file.removed);
   }
 
+  private fileDirectory(file: NativeTurnFileChange): string {
+    return nativeTurnFilePresentation(file.path, this.workspaceRoot, file.display).directory;
+  }
+
+  private fileName(file: NativeTurnFileChange): string {
+    return nativeTurnFilePresentation(file.path, this.workspaceRoot, file.display).name;
+  }
+
+  private fileDisplayPath(file: NativeTurnFileChange): string {
+    return nativeTurnFilePresentation(file.path, this.workspaceRoot, file.display).relativePath;
+  }
+
   @Builder
   private fileRow(file: NativeTurnFileChange) {
     Button({ type: ButtonType.Normal }) {
-      Row({ space: 8 }) {
+      Row({ space: 7 }) {
         DSHIcon({ glyph: 'file-outline', glyphSize: 14,
           color: this.dark ? '#BFC3C8' : '#5F646A' })
-        Text(file.display || file.path).fontSize(12).layoutWeight(1).maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .fontColor(this.dark ? '#E8E9EB' : '#2B2D30')
+        Row({ space: 4 }) {
+          if (this.fileDirectory(file)) {
+            Text(this.fileDirectory(file)).fontSize(11).layoutWeight(1).maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .fontColor(this.dark ? '#969A9F' : '#777C82')
+          }
+          Text(this.fileName(file)).fontSize(12)
+            .layoutWeight(this.fileDirectory(file) ? 2 : 1).maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .fontColor(this.dark ? '#E8E9EB' : '#2B2D30')
+        }.layoutWeight(1)
         if (file.binary || file.oversized) {
           Text(this.fileMetric(file)).fontSize(11)
             .fontColor(this.dark ? '#A8ABAF' : '#686D73')
@@ -183,7 +205,7 @@ export struct NativeTurnChangesCard {
       }.width('100%').padding({ left: 10, right: 10 })
     }.height(38).width('100%').padding(0).borderRadius(8)
       .backgroundColor(Color.Transparent)
-      .accessibilityText('打开已修改文件 ' + file.path + '，增加 ' + file.added +
+      .accessibilityText('打开已修改文件 ' + this.fileDisplayPath(file) + '，增加 ' + file.added +
         ' 行，删除 ' + file.removed + ' 行')
       .onClick((): void => { this.onOpenFile(file.path); })
   }
@@ -262,7 +284,7 @@ export struct NativeTurnChangesCard {
           .fontColor(this.dark ? '#D5D7DA' : '#45494E')
           .onClick((): void => { this.toggle(); })
       }
-    }.width('100%').clip(true).borderRadius(14)
+    }.width('96%').clip(true).borderRadius(14)
       .backgroundColor(this.dark ? '#202124' : '#FFFFFF')
       .border({ width: 0.5, color: this.dark ? '#484A4D' : '#D9DCE1' })
       .animation(NativeMotion.disclosureParam())
