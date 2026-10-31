@@ -243,6 +243,9 @@ test('navigation polish keeps the drawer, uses incremental browsing and guarded 
   assert.match(browser,/if \(!confirmAtRoot\) \{[\s\S]{0,100}this\.onClose\(\)/);
   assert.match(browser,/private systemBack\(\): void \{\s*this\.back\(true\);/);
   assert.match(browser,/accessibilityText\('返回'\)\.onClick\(\(\) => \{ this\.back\(false\); \}\)/);
+  assert.match(browser,/@Prop previewOnly: boolean = false/);
+  assert.match(browser,/if \(!this\.previewOnly\) this\.history\.push\('directory', this\.navigationPath\)/);
+  assert.match(browser,/if \(this\.previewOnly\) \{[\s\S]{0,100}this\.onClose\(\)/);
   const diff=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeDiffBlock.ets',
     import.meta.url),'utf8');
   assert.doesNotMatch(diff,/drag-handle-outline/);
@@ -878,6 +881,8 @@ test('turn change card and bottom live control keep compact ownership and motion
   assert.match(view, /!NativeMotion\.enabled\(\)/);
   assert.doesNotMatch(view, /撤销|查看变更/);
   assert.match(workspace, /NativeTurnChangesCard\(\{[\s\S]{0,500}onOpenFile:[\s\S]{0,180}this\.openTurnChangeFile/);
+  assert.match(workspace, /request\.previewOnly = true/);
+  assert.match(workspace, /previewOnly: this\.fileView\.previewOnly/);
   assert.match(workspace, /NativeTurnChangePill\(\{[\s\S]{0,180}liveTurnChanges/);
   assert.match(workspace, /nativeLiveTurnChange\(rows,[\s\S]{0,180}model\.running/);
   assert.match(workspace, /Activity can change without a tool\/footer signature change[\s\S]{0,900}liveTurnChangesVisible = false/);
@@ -886,10 +891,16 @@ test('turn change card and bottom live control keep compact ownership and motion
   assert.match(workspace, /nativeTurnChangeSummaryFromJson/);
   assert.match(workspace, /officialTurnChangeSequences\.get\(reference\.turnKey\)/);
   assert.match(workspace, /NativeBottomConversationDock\(\{[\s\S]{0,260}horizontalBleed: 12/);
+  assert.match(workspace, /elevated: this\.liveTurnChangesVisible \|\| this\.attachments\.length > 0/);
   assert.doesNotMatch(workspace, /bottomDockContentHeight|bottomDockOverlayInset|translate\(\{ y: -\(this\.bottomDock/);
   assert.match(workspace, /if \(this\.liveTurnChangesVisible\)[\s\S]{0,360}NativeTurnChangePill/);
   assert.match(workspace, /if \(this\.attachments\.length\)[\s\S]{0,260}NativeAttachmentDraft/);
-  assert.match(dock, /backgroundBlurStyle\(NativeExperience\.materialsEnabled\(\) \? BlurStyle\.Thin : BlurStyle\.NONE\)/);
+  assert.match(dock, /@Prop elevated: boolean = false/);
+  assert.match(dock, /if \(this\.elevated && NativeExperience\.materialsEnabled\(\)\)/);
+  assert.match(dock, /\.backgroundBlurStyle\(BlurStyle\.Thin\)/);
+  assert.match(dock, /\.linearGradientBlur\(18/);
+  assert.match(dock, /direction: GradientDirection\.Bottom/);
+  assert.doesNotMatch(dock, /\.backgroundColor\(/);
   assert.match(dock, /margin\(\{ left: -this\.horizontalBleed, right: -this\.horizontalBleed \}\)/);
   assert.match(dock, /nativeSafeBottom/);
   assert.match(dock, /top: 8, bottom: Math\.ceil\(this\.safeBottom \* 1\.2\) \+ 8/);

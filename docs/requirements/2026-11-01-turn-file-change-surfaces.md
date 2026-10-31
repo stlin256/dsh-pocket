@@ -18,6 +18,9 @@ The live control hides when the turn completes or stops.
   expands the list.
 - A file row opens that Host workspace file in the existing read-only native
   file preview.
+- A file opened directly from the completed-turn card returns to the conversation
+  on Back. It must not expose the file's parent directory as an intermediate
+  navigation step.
 - The card has no undo action and no separate `查看变更` action.
 - The normal completed/stopped/failed state and final-answer copy action remain
   available without creating an extra footer row.
@@ -48,8 +51,10 @@ The live control hides when the turn completes or stops.
   the return-to-bottom control.
 - The return-to-bottom control never adds permanent bottom space because it is
   a floating overlay.
-- API 26 may use a full-width translucent material/blur surface. API 23 keeps
-  the same function and hierarchy with an opaque themed surface.
+- The default composer state has no full-width backdrop or fixed dark strip.
+  Only when a live-change pill or attachment makes the Dock gain extra content
+  may API 26 show a full-width edge-to-edge blur that fades in from the
+  transparent top edge instead of painting an opaque theme color.
 
 ## Data and plugin
 

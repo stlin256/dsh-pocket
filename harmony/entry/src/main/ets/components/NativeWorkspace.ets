@@ -301,6 +301,7 @@ export struct NativeWorkspace {
       request.sessionId = parsed.sessionId;
       request.path = parsed.path;
       request.requestId = parsed.requestId;
+      request.previewOnly = parsed.previewOnly === true;
       if (this.fileViewOpen && this.fileView.sessionId === request.sessionId) {
         AppStorage.setOrCreate<string>('nativeBrowserPushPayload', JSON.stringify(request));
         AppStorage.setOrCreate<number>('nativeBrowserPushRevision',
@@ -1538,6 +1539,7 @@ export struct NativeWorkspace {
     request.sessionId = this.selected;
     request.path = nativeFileTarget(path, this.workspaceRootFor(this.selected));
     request.requestId = util.generateRandomUUID();
+    request.previewOnly = true;
     const clean = request.path.replace(/\\/g, '/');
     const slash = clean.lastIndexOf('/');
     this.client.rememberBrowsePath(this.selected, slash >= 0 ? clean.slice(0, slash) : '');
@@ -2307,7 +2309,8 @@ export struct NativeWorkspace {
       }
       NativeBottomConversationDock({
         horizontalBleed: 12,
-        contentInset: 0
+        contentInset: 0,
+        elevated: this.liveTurnChangesVisible || this.attachments.length > 0
       }) {
         Column({ space: 8 }) {
           if (this.liveTurnChangesVisible) {
@@ -2600,6 +2603,7 @@ export struct NativeWorkspace {
           workspaceRoot: this.workspaceRootFor(this.fileView.sessionId),
           path: this.fileView.kind === 'browser' ? this.fileView.path : this.browserDirectoryForFile(this.fileView.path),
           initialPreviewPath: this.fileView.kind === 'file' ? this.fileView.path : '',
+          previewOnly: this.fileView.previewOnly,
           onClose: (): void => { this.closeFileView(); } })
       }
       if (this.imagePreviewOpen) {

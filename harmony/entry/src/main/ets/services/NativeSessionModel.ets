@@ -16,6 +16,7 @@ export class NativeFileViewRequest {
   sessionId: string = '';
   path: string = '';
   requestId: string = '';
+  previewOnly: boolean = false;
 }
 export class NativeAssistantSegment {
   kind: string = ''; text: string = ''; blocks: NativeTextBlock[] = []; images: NativeImageAttachment[] = [];

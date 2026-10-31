@@ -91,6 +91,14 @@ resolves paths with the existing `nativeFileTarget(path, workspaceRoot)` rule
 and opens the existing `NativeFileBrowser` in file mode. No new read/write API
 is introduced.
 
+Card-originated preview requests set `NativeFileViewRequest.previewOnly = true`.
+`NativeFileBrowser` then opens the requested file without seeding its parent
+directory into browser history. Back from that initial preview closes the file
+surface and returns directly to the conversation. Browser-originated file
+requests leave the flag false and continue returning to their directory. If a
+card preview explicitly navigates through the browser controls, each new
+destination still pushes normal in-browser history.
+
 ## 4. Final transcript card
 
 Render the card in the existing `turn-footer` ListItem when a summary exists.
@@ -134,20 +142,24 @@ layers.
 - is hidden when `liveTurnChanges` is absent, the session is no longer
   running/waiting, or the turn has a footer.
 
-The conversation's bottom area is one natural-height reusable dock:
+The conversation's bottom area is one natural-height reusable layout stack:
 
-1. full-width dock surface and blur/material;
+1. no shared backdrop in the ordinary composer-only state;
 2. centered live change pill;
 3. selected attachment strip;
 4. composer;
 5. safe-area bottom inset.
 
+When and only when the live pill or attachment strip is present, API 26 may
+insert a full-width backdrop using `backgroundBlurStyle(BlurStyle.Thin)` plus
+`linearGradientBlur`, with blur increasing toward the bottom. The backdrop has
+no solid theme `backgroundColor`; its top edge remains transparent. API 23 and
+reduced-transparency mode skip the backdrop. The live pill, attachment chips and
+composer continue to own their local surfaces.
+
 The return-to-bottom control remains an independent overlay immediately above
 the bottom stack. It does not add layout height and does not overlap the live
 pill, attachments or composer.
-
-API 26 material is used only when `NativeExperience.materialsEnabled()`; API 23
-uses the opaque themed surface.
 
 ## 7. Motion
 
@@ -192,8 +204,9 @@ Add source-contract assertions for:
 
 - footer card ownership and no undo/view-change actions;
 - file-row callback to the existing preview;
+- card-originated previews use `previewOnly` and do not seed directory history;
 - live pill hidden by running state/footer;
-- intrinsic pill width and full-width bottom dock surface;
+- intrinsic pill width, idle transparency and conditional gradient blur;
 - return-to-bottom remains above the measured stack;
 - reduced-motion handling.
 

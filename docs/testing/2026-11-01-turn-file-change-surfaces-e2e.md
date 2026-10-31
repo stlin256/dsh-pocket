@@ -31,4 +31,6 @@ Automated evidence in this change:
 | TFC-12 | Session switch/reconnect | No live summary leaks across sessions; final cards survive cached reopen | Pending |
 | TFC-13 | Official final summary | Stopped-turn counts include command and Git-visible changes from `workspace/changes`, while an unavailable route falls back to successful tool diffs | Pending |
 | TFC-14 | Official summary privacy | Native UI receives no Host cwd, snapshot identity, credential or unvalidated summary fields | Pending |
+| TFC-15 | Return from a card-opened file | Using toolbar Back or the system back gesture returns directly to the conversation and does not reveal the file's parent directory | Pending |
+| TFC-16 | Conditional Dock blur | With only the composer, there is no full-width background. Adding a live-change pill or attachment reveals a top-transparent gradient blur with no fixed black or opaque strip in light and dark mode | Pending |
 

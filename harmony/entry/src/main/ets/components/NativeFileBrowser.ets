@@ -32,6 +32,7 @@ export struct NativeFileBrowser {
   workspaceRoot: string = '';
   @Prop path: string = '';
   @Prop initialPreviewPath: string = '';
+  @Prop previewOnly: boolean = false;
   onClose: () => void = (): void => {};
   @StorageLink('nativeDark') private dark: boolean = false;
   @StorageLink('nativeSafeTop') private safeTop: number = 0;
@@ -60,7 +61,7 @@ export struct NativeFileBrowser {
     this.mounted = true;
     this.navigationPath = this.workspacePath(this.path);
     if (this.initialPreviewPath) {
-      this.history.push('directory', this.navigationPath);
+      if (!this.previewOnly) this.history.push('directory', this.navigationPath);
       this.previewPath = this.workspacePath(this.initialPreviewPath);
     }
     this.load();
@@ -182,6 +183,11 @@ export struct NativeFileBrowser {
         this.previewPath = '';
         this.load(previous.path);
       }
+      return;
+    }
+    if (this.previewOnly) {
+      this.rootExitArmedAt = 0;
+      this.onClose();
       return;
     }
     if (!confirmAtRoot) {
