@@ -29,12 +29,15 @@ export struct NativeFileBrowser {
   @State private displayPath: string = '';
   @State private entries: NativeDirectoryEntry[] = [];
   @State private loading: boolean = true;
+  @State private navigating: boolean = false;
   @State private error: string = '';
   @State private truncated: boolean = false;
   @State private previewPath: string = '';
   @State private downloadingFile: string = '';
   @State private pressedEntry: string = '';
   private mounted: boolean = false;
+  private hasLoaded: boolean = false;
+  private requestGeneration: number = 0;
   private rootExitArmedAt: number = 0;
 
   aboutToAppear(): void {
@@ -51,18 +54,45 @@ export struct NativeFileBrowser {
   }
   private async load(next: string = this.navigationPath): Promise<void> {
     const requested = this.workspacePath(next);
-    this.loading = true; this.error = '';
+    const previousPath = this.navigationPath;
+    const previousDisplayPath = this.displayPath;
+    const generation = ++this.requestGeneration;
+    const preserveContent = this.hasLoaded;
+    if (preserveContent) {
+      this.navigating = true;
+      this.navigationPath = requested;
+    } else {
+      this.loading = true;
+    }
+    this.error = '';
     try {
       const value: NativeDirectoryListing = await this.client.listFiles(this.sessionId, requested);
-      if (!this.mounted) return;
+      if (!this.mounted || generation !== this.requestGeneration) return;
       this.navigationPath = requested;
       this.displayPath = value.path;
       this.entries = value.entries;
       this.truncated = value.truncated;
+      this.hasLoaded = true;
       this.rootExitArmedAt = 0;
       this.client.rememberBrowsePath(this.sessionId, requested);
-    } catch (_) { if (this.mounted) this.error = '无法打开此文件夹'; }
-    finally { if (this.mounted) this.loading = false; }
+    } catch (_) {
+      if (!this.mounted || generation !== this.requestGeneration) return;
+      if (preserveContent) {
+        this.navigationPath = previousPath;
+        this.displayPath = previousDisplayPath;
+        this.getUIContext().getPromptAction().showToast({
+          message: '无法打开此文件夹',
+          duration: 1400
+        });
+      } else {
+        this.error = '无法打开此文件夹';
+      }
+    } finally {
+      if (this.mounted && generation === this.requestGeneration) {
+        this.loading = false;
+        this.navigating = false;
+      }
+    }
   }
   private parent(): void {
     const clean = this.navigationPath.replace(/\/+$/, '');
@@ -80,7 +110,7 @@ export struct NativeFileBrowser {
   }
   private open(entry: NativeDirectoryEntry): void {
     if (entry.type === 'directory') {
-      this.animate(() => { this.load(this.child(entry)); });
+      this.load(this.child(entry));
     } else if (entry.type === 'file') {
       this.client.rememberBrowsePath(this.sessionId, this.navigationPath);
       this.rootExitArmedAt = 0;
@@ -93,7 +123,6 @@ export struct NativeFileBrowser {
       this.rootExitArmedAt = 0;
       return;
     }
-    if (this.loading) return;
     if (this.navigationPath) {
       this.parent();
       return;
@@ -105,7 +134,7 @@ export struct NativeFileBrowser {
     }
     this.rootExitArmedAt = now;
     this.getUIContext().getPromptAction().showToast({
-      message: '再次滑动退出文件浏览',
+      message: '再次返回退出文件浏览',
       duration: 1600
     });
   }
@@ -173,8 +202,13 @@ export struct NativeFileBrowser {
       }.width(32).height(32).borderRadius(9).backgroundColor(Color.Transparent)
         .accessibilityText('上一级').enabled(!!this.navigationPath).onClick(() => { this.parent(); })
       Column({ space: 1 }) {
-        Text(this.navigationPath || '工作区').fontSize(14).fontWeight(FontWeight.Medium).maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor(this.dark ? '#F9FAFB' : '#17181B')
+        Row({ space: 5 }) {
+          Text(this.navigationPath || '工作区').fontSize(14).fontWeight(FontWeight.Medium).maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor(this.dark ? '#F9FAFB' : '#17181B')
+          if (this.navigating) {
+            LoadingProgress().width(13).height(13).color(this.dark ? '#8AB4FF' : '#3964FE')
+          }
+        }.width('100%')
         Text(this.navigationPath ? '文件夹' : '工作区根目录').fontSize(10)
           .fontColor(this.dark ? '#93969B' : '#8A8D91')
       }.layoutWeight(1).alignItems(HorizontalAlign.Start)
@@ -267,12 +301,12 @@ export struct NativeFileBrowser {
   }
   @Builder
   private content() {
-    if (this.loading) {
+    if (this.loading && !this.hasLoaded) {
       Column({ space: 10 }) {
         LoadingProgress().width(24).height(24).color(this.dark ? '#8AB4FF' : '#3964FE')
         Text('正在读取…').fontSize(12).fontColor(this.dark ? '#93969B' : '#8A8D91')
       }.layoutWeight(1).justifyContent(FlexAlign.Center)
-    } else if (this.error) {
+    } else if (this.error && !this.hasLoaded) {
       Column({ space: 10 }) {
         Text(this.error).fontSize(13).fontColor(this.dark ? '#FFB1B1' : '#B3261E')
         Button({ type: ButtonType.Normal }) {
@@ -312,6 +346,9 @@ export struct NativeFileBrowser {
           }
         }
       }.layoutWeight(1).width('100%').cachedCount(8)
+        .opacity(this.navigating ? 0.72 : 1)
+        .animation(NativeMotion.disclosureParam())
+        .edgeEffect(NativeMotion.enabled() ? EdgeEffect.Spring : EdgeEffect.None)
     }
   }
   build() {

@@ -584,7 +584,7 @@ struct Index {
     }
     this.exitGestureArmedAt = now;
     this.getUIContext().getPromptAction().showToast({
-      message: '再次滑动退出',
+      message: '再次返回退出App',
       duration: 1500
     });
   }

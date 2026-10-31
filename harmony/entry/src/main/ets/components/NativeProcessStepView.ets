@@ -53,7 +53,7 @@ export struct NativeProcessStepView {
 
   private toggle(): void {
     if (this.message.phase === 'preparing') return;
-    NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
+    NativeMotion.disclosure(this.getUIContext(), (): void => {
       this.expanded = !this.expanded;
       this.disclosures.set(this.disclosureId, this.expanded);
     });
@@ -87,7 +87,7 @@ export struct NativeProcessStepView {
       }.width('100%').constraintSize({ maxHeight: Math.max(96, this.maxExpandedHeight) })
         .scrollable(ScrollDirection.Vertical).scrollBar(BarState.Auto)
         .edgeEffect(EdgeEffect.None)
-        .transition(NativeMotion.rowTransition())
+        .transition(NativeMotion.disclosureTransition())
     }
   }
 
@@ -107,7 +107,7 @@ export struct NativeProcessStepView {
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .fontColor(this.dark ? '#93969B' : '#8A8D91')
               .opacity(this.expanded ? 0 : 1)
-              .animation(NativeMotion.implicit('micro'))
+              .animation(NativeMotion.disclosureParam())
           } else {
             Blank().layoutWeight(1)
           }
@@ -125,7 +125,7 @@ export struct NativeProcessStepView {
             DSHIcon({ glyph: 'chevron-left-outline',
               color: this.dark ? '#93969B' : '#8A8D91', glyphSize: 12 })
               .rotate({ angle: this.expanded ? -90 : 180 })
-              .animation(NativeMotion.implicit('micro'))
+              .animation(NativeMotion.disclosureParam())
           }
         }.width('100%')
       }.height(30).width('100%').padding({ left: 2, right: 2 })

@@ -6,6 +6,7 @@ import { NativeFileContent, NativeFileTransfer } from '../services/NativeFileTra
 import { NativeDocumentDescriptor, nativeDocumentDescriptor } from '../services/NativeDocumentModel';
 import { DSHIcon } from './DSHIcon';
 import { NativeMotion } from '../services/NativeMotion';
+import { NativeImageZoom, NativeImageZoomTarget } from '../services/NativeImageZoom';
 import { NativeDocumentModeSwitch } from './NativeDocumentModeSwitch';
 import { NativeCodeViewer } from './NativeCodeViewer';
 import { NativeMarkdownPreview } from './NativeMarkdownPreview';
@@ -115,12 +116,15 @@ export struct NativeFilePreview {
   private animate(action: () => void): void {
     NativeMotion.animate(this.getUIContext(), 'navigation', action);
   }
-  private resetImageZoom(): void {
+  private toggleImageDoubleTapZoom(tapX: number, tapY: number): void {
     if (this.touchMode === 'pinch' || Date.now() - this.lastPinchEndedAt < 450) return;
-    this.animate((): void => {
-      this.zoom = 1;
-      this.offsetX = 0;
-      this.offsetY = 0;
+    const target: NativeImageZoomTarget = NativeImageZoom.doubleTap(
+      this.zoom, tapX, tapY, this.viewportWidth, this.viewportHeight,
+      this.imageWidth, this.imageHeight, this.offsetX, this.offsetY);
+    NativeMotion.spring(this.getUIContext(), (): void => {
+      this.zoom = target.zoom;
+      this.offsetX = target.offsetX;
+      this.offsetY = target.offsetY;
     });
   }
   private clampOffset(value: number, viewport: number, content: number): number {
@@ -201,7 +205,7 @@ export struct NativeFilePreview {
         Math.abs(this.touchStartY - this.lastTapY) < 32) {
         this.lastTapAt = 0;
         this.touchMode = 'none';
-        this.resetImageZoom();
+        this.toggleImageDoubleTapZoom(this.touchStartX, this.touchStartY);
         return;
       }
       this.lastTapAt = now;

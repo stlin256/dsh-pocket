@@ -252,6 +252,7 @@ export struct NativeWorkspace {
       request.kind = parsed.kind;
       request.sessionId = parsed.sessionId;
       request.path = parsed.path;
+      request.requestId = parsed.requestId;
       if (parsed.kind === 'browser') {
         this.client.rememberBrowsePath(parsed.sessionId, parsed.path);
       } else {
@@ -554,7 +555,7 @@ export struct NativeWorkspace {
     });
   }
   private toggleWorkspaceGroup(id: string): void {
-    NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
+    NativeMotion.disclosure(this.getUIContext(), (): void => {
       this.collapsedGroups = this.collapsedGroups.includes(id) ?
         this.collapsedGroups.filter((value: string): boolean => value !== id) :
         this.collapsedGroups.concat([id]);
@@ -1325,7 +1326,11 @@ export struct NativeWorkspace {
     const planSignature = nativePlanSignature(plan);
     if (planSignature !== this.taskPlanSignature || plan.parsed !== this.taskPlan.parsed) {
       this.taskPlanSignature = planSignature;
-      this.taskPlan = plan;
+      if (!this.taskPlan.items.length && plan.items.length) {
+        NativeMotion.disclosure(this.getUIContext(), (): void => { this.taskPlan = plan; });
+      } else {
+        this.taskPlan = plan;
+      }
     }
     const visible = nativePresentTranscript(rows, this.client.hostSettings.chat(), this.model.turnDisclosure, this.model.collapseThrough);
     this.visibleRows = visible;
@@ -1664,12 +1669,10 @@ export struct NativeWorkspace {
       }, 0);
       return;
     }
-    try { this.scroller.scrollToIndex(lastIndex, true, ScrollAlign.END); } catch (_) {}
+    try { this.scroller.scrollEdge(Edge.Bottom, { velocity: 6000 }); } catch (_) {}
     this.returnToBottomTimer = setTimeout((): void => {
-      if (!this.mounted || !this.returningToBottom) return;
-      try { this.scroller.scrollEdge(Edge.Bottom); } catch (_) {}
-      this.settleScrollTail();
-    }, 320);
+      if (this.mounted && this.returningToBottom) this.settleScrollTail();
+    }, 1400);
   }
 
   @Builder
@@ -1723,6 +1726,7 @@ export struct NativeWorkspace {
         glyphSize: 12, color: this.dark ? '#93969B' : '#777A80' })
         .rotate({ angle: entry.section === 'pinnedHeader' ? 0 :
           this.collapsedGroups.includes(entry.workspaceId) ? 180 : -90 })
+        .animation(NativeMotion.disclosureParam())
       Text(entry.title).fontSize(12).fontWeight(FontWeight.Medium).layoutWeight(1)
         .fontColor(this.dark ? '#B5B8BD' : '#61666B')
       Text(String(entry.count)).fontSize(11).fontColor(this.dark ? '#93969B' : '#8A8D91')
@@ -1730,7 +1734,7 @@ export struct NativeWorkspace {
         DSHIcon({ glyph: 'chevron-left-outline', glyphSize: 12,
           color: this.dark ? '#93969B' : '#777A80' })
           .rotate({ angle: this.collapsedGroups.includes(entry.workspaceId) ? 180 : -90 })
-          .animation(NativeMotion.implicit('micro'))
+          .animation(NativeMotion.disclosureParam())
       }
       if (entry.section === 'workspaceHeader') {
         DSHIcon({ glyph: 'drag-handle-outline', glyphSize: 13,
@@ -1890,7 +1894,6 @@ export struct NativeWorkspace {
         }.width('100%').padding({ left: 10, right: 10 })
       }.width('100%').height(44).borderRadius(10).backgroundColor(Color.Transparent)
         .accessibilityText('应用设置').onClick(() => {
-          this.closeDrawer();
           this.onSettings();
         })
     }.padding({ left: 12, right: 12, top: this.safeTop + (inMobileDrawer ? 6 : 8),
@@ -1914,6 +1917,11 @@ export struct NativeWorkspace {
         Text(this.title).fontSize(15).fontWeight(FontWeight.Medium).layoutWeight(1)
           .maxLines(3).textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor(this.dark ? '#F9FAFB' : '#0F1115')
           .onClick(() => { this.getUIContext().getPromptAction().showDialog({ title: '会话标题', message: this.title, buttons: [{ text: '关闭', color: this.dark ? '#AFC9FF' : '#315ECA' }] }); })
+        if ((this.connectionPhase === 'opening' || this.connectionPhase === 'syncing') &&
+          !this.model.messages.length) {
+          LoadingProgress().width(14).height(14).color(this.dark ? '#8AB4FF' : '#3964FE')
+            .accessibilityText('正在加载会话')
+        }
         Button({ type: ButtonType.Normal }) {
           DSHIcon({ glyph: 'ellipsis-outline', color: this.dark ? '#CFD3D6' : '#61666B' })
         }.width(36).height(36).borderRadius(10)
@@ -1929,10 +1937,6 @@ export struct NativeWorkspace {
           Blank()
         }.padding({ left: 10, right: 10, top: 6, bottom: 6 }).width('100%').borderRadius(9)
           .backgroundColor(this.dark ? '#2C2C2E' : '#F5F6F7')
-      }
-      if ((this.connectionPhase === 'opening' || this.connectionPhase === 'syncing') && !this.model.messages.length) {
-        Row({ space: 8 }) { LoadingProgress().width(14).height(14); Text('正在加载会话…').fontSize(12).fontColor(this.dark ? '#93969B' : '#8A8D91') }
-          .width('100%').padding({ left: 4, top: 4, bottom: 4 })
       }
       Stack({ alignContent: Alignment.TopStart }) {
         List({ space: 12, scroller: this.scroller }) {
@@ -2004,12 +2008,18 @@ export struct NativeWorkspace {
             }
           })
           .onScroll(() => { this.updateScrollTail(); })
+          .onScrollStop(() => {
+            if (this.returningToBottom) this.settleScrollTail();
+            else this.updateScrollTail();
+          })
         if (this.taskPlan.items.length) {
           Column() {
             NativeConversationDock() {
               NativeTaskDock({ document: this.taskPlan, sessionId: this.selected })
             }
           }.width('100%').zIndex(4)
+            .transition(NativeMotion.disclosureTransition())
+            .animation(NativeMotion.disclosureParam())
         }
         if (this.backToBottomVisible && !this.menuId && !this.utilityOpen &&
           !this.modelPickerOpen && !this.toolsOpen && !this.workspacePickerOpen &&

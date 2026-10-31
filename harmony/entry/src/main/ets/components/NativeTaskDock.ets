@@ -23,7 +23,7 @@ export struct NativeTaskDock {
   }
 
   private toggle(): void {
-    NativeMotion.animate(this.getUIContext(), 'surface', (): void => {
+    NativeMotion.disclosure(this.getUIContext(), (): void => {
       this.expanded = !this.expanded;
     });
   }
@@ -58,7 +58,7 @@ export struct NativeTaskDock {
         }.width('100%').constraintSize({ maxHeight: 180 })
           .scrollable(ScrollDirection.Vertical).scrollBar(BarState.Auto)
           .edgeEffect(EdgeEffect.None)
-          .transition(NativeMotion.rowTransition())
+          .transition(NativeMotion.disclosureTransition())
       }
     }.width('100%').constraintSize({ maxWidth: 620 }).clip(true)
       .borderRadius(this.expanded ? 14 : 16)
@@ -66,6 +66,6 @@ export struct NativeTaskDock {
       .border({ width: 0.5, color: this.dark ? '#4A4B4F' : '#D9DBDF' })
       .shadow({ radius: 18, color: this.dark ? '#88000000' : '#26000000',
         offsetX: 0, offsetY: 5 })
-      .animation(NativeMotion.implicit('surface'))
+      .animation(NativeMotion.disclosureParam())
   }
 }

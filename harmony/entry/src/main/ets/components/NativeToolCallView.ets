@@ -41,8 +41,10 @@ export struct NativeToolCallView {
   }
   private toggle(): void {
     if (this.message.phase === 'preparing') return;
-    this.expanded = !this.expanded;
-    this.disclosures.set(this.message.turnKey + '|' + this.message.id, this.expanded);
+    NativeMotion.disclosure(this.getUIContext(), (): void => {
+      this.expanded = !this.expanded;
+      this.disclosures.set(this.message.turnKey + '|' + this.message.id, this.expanded);
+    });
   }
   build() {
     Column({ space: 4 }) {
@@ -60,6 +62,7 @@ export struct NativeToolCallView {
               Text(this.detail).fontSize(12).layoutWeight(1).maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor(this.dark ? '#93969B' : '#8A8D91')
                 .opacity(this.expanded ? 0 : 1).translate({ x: this.expanded ? 4 : 0 })
+                .animation(NativeMotion.disclosureParam())
             } else {
               Blank().layoutWeight(1)
             }
@@ -76,6 +79,7 @@ export struct NativeToolCallView {
             if (this.message.phase !== 'preparing') {
               DSHIcon({ glyph: 'chevron-left-outline', color: this.dark ? '#93969B' : '#8A8D91', glyphSize: 12 })
                 .rotate({ angle: this.expanded ? -90 : 180 })
+                .animation(NativeMotion.disclosureParam())
             }
           }.width('100%')
         }.height(30).width('100%').padding({ left: 2, right: 2 }).backgroundColor(Color.Transparent)
@@ -130,7 +134,7 @@ export struct NativeToolCallView {
         }.width('100%').constraintSize({ maxHeight: Math.max(96, this.maxExpandedHeight) })
           .scrollable(ScrollDirection.Vertical).scrollBar(BarState.Auto)
           .edgeEffect(EdgeEffect.None)
-          .transition(NativeMotion.rowTransition())
+          .transition(NativeMotion.disclosureTransition())
       }
     }.width('100%').alignItems(HorizontalAlign.Start)
   }
@@ -148,7 +152,7 @@ struct NativeNestedToolRow {
 
   private preview(): string { return nativeToolDetail(this.message); }
   private toggle(): void {
-    NativeMotion.animate(this.getUIContext(), 'micro', (): void => { this.expanded = !this.expanded; });
+    NativeMotion.disclosure(this.getUIContext(), (): void => { this.expanded = !this.expanded; });
   }
 
   build() {
@@ -166,12 +170,14 @@ struct NativeNestedToolRow {
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .fontColor(this.dark ? '#93969B' : '#8A8D91')
               .opacity(this.expanded ? 0 : 1)
+              .animation(NativeMotion.disclosureParam())
           } else {
             Blank().layoutWeight(1)
           }
           DSHIcon({ glyph: 'chevron-left-outline',
             color: this.dark ? '#93969B' : '#8A8D91', glyphSize: 11 })
             .rotate({ angle: this.expanded ? -90 : 180 })
+            .animation(NativeMotion.disclosureParam())
         }.width('100%')
       }.height(28).width('100%').padding({ left: 2, right: 2 })
         .backgroundColor(Color.Transparent).onClick((): void => { this.toggle(); })
@@ -204,6 +210,7 @@ struct NativeNestedToolRow {
           }.width('100%').padding({ right: 10 }).alignItems(HorizontalAlign.Start)
         }.width('100%').constraintSize({ maxHeight: Math.max(80, this.maxExpandedHeight * 0.7) })
           .scrollable(ScrollDirection.Vertical).edgeEffect(EdgeEffect.None)
+          .transition(NativeMotion.disclosureTransition())
       }
     }.width('100%').alignItems(HorizontalAlign.Start)
   }

@@ -42,7 +42,7 @@ export struct NativeProcessView {
   }
 
   private toggle(): void {
-    NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
+    NativeMotion.disclosure(this.getUIContext(), (): void => {
       this.expanded = !this.expanded;
       this.disclosures.set(this.disclosureId, this.expanded);
     });
@@ -62,7 +62,7 @@ export struct NativeProcessView {
       .scrollBar(BarState.Auto)
       .edgeEffect(EdgeEffect.None)
       .cachedCount(4)
-      .transition(NativeMotion.rowTransition())
+      .transition(NativeMotion.disclosureTransition())
   }
 
   build() {
@@ -78,14 +78,14 @@ export struct NativeProcessView {
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .fontColor(this.dark ? '#93969B' : '#8A8D91')
               .opacity(this.expanded ? 0 : 1)
-              .animation(NativeMotion.implicit('micro'))
+              .animation(NativeMotion.disclosureParam())
           } else {
             Blank().layoutWeight(1)
           }
           DSHIcon({ glyph: 'chevron-left-outline',
             color: this.dark ? '#93969B' : '#8A8D91', glyphSize: 12 })
             .rotate({ angle: this.expanded ? -90 : 180 })
-            .animation(NativeMotion.implicit('micro'))
+            .animation(NativeMotion.disclosureParam())
         }.width('100%')
       }.height(30).width('100%').padding({ left: 2, right: 2 })
         .backgroundColor(Color.Transparent).onClick((): void => { this.toggle(); })

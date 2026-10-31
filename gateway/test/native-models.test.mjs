@@ -185,7 +185,10 @@ test('semantic motion tokens resolve directly when motion is disabled', () => {
   assert.equal(calls[0].duration, 220);
   NativeMotion.spring(ui, () => { actions++; });
   assert.equal(calls[1].curve.kind, 'spring');
-  assert.equal(actions, 2);
+  NativeMotion.disclosure(ui, () => { actions++; });
+  assert.equal(calls[2].curve.kind, 'spring');
+  assert.deepEqual(calls[2].curve.args, [0.21, 0.9, 0.22]);
+  assert.equal(actions, 3);
   const rowTransition = NativeMotion.rowTransition();
   const backwardNavigation = NativeMotion.navigationTransition(-1);
   assert.equal(rowTransition.animationParam.duration, 140);
@@ -195,8 +198,53 @@ test('semantic motion tokens resolve directly when motion is disabled', () => {
   state.set('nativeUserReduceMotion', true);
   NativeMotion.animate(ui, 'surface', () => { actions++; });
   NativeMotion.spring(ui, () => { actions++; });
-  assert.equal(calls.length, 2);
-  assert.equal(actions, 4);
+  NativeMotion.disclosure(ui, () => { actions++; });
+  assert.equal(calls.length, 3);
+  assert.equal(actions, 6);
+});
+
+test('double-tap zoom targets the tapped image point and resets from an enlarged view', () => {
+  const { NativeImageZoom } = load('NativeImageZoom', {});
+  const focused = NativeImageZoom.doubleTap(1, 100, 300, 400, 600, 400, 600);
+  assert.equal(focused.zoom, 2.5);
+  assert.equal(focused.offsetX, 150);
+  assert.equal(focused.offsetY, 0);
+  const clamped = NativeImageZoom.doubleTap(1, 1, 1, 400, 600, 400, 600);
+  assert.equal(clamped.offsetX, 298.5);
+  assert.equal(clamped.offsetY, 448.5);
+  const reset = NativeImageZoom.doubleTap(2.5, 100, 300, 400, 600, 400, 600, 150, 0);
+  assert.deepEqual({ zoom: reset.zoom, x: reset.offsetX, y: reset.offsetY },
+    { zoom: 1, x: 0, y: 0 });
+});
+
+test('navigation polish keeps the drawer, uses incremental browsing and guarded returns', () => {
+  const workspace=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeWorkspace.ets',
+    import.meta.url),'utf8');
+  const index=readFileSync(new URL('../../harmony/entry/src/main/ets/pages/Index.ets',
+    import.meta.url),'utf8');
+  const browser=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeFileBrowser.ets',
+    import.meta.url),'utf8');
+  assert.match(workspace,/accessibilityText\('应用设置'\)\.onClick\(\(\) => \{\s*this\.onSettings\(\);/);
+  assert.doesNotMatch(workspace,/accessibilityText\('应用设置'\)[\s\S]{0,100}this\.closeDrawer\(\)/);
+  assert.match(workspace,/scrollEdge\(Edge\.Bottom, \{ velocity: 6000 \}\)/);
+  assert.match(workspace,/!this\.taskPlan\.items\.length && plan\.items\.length[\s\S]{0,140}NativeMotion\.disclosure/);
+  assert.match(workspace,/\.transition\(NativeMotion\.disclosureTransition\(\)\)[\s\S]{0,100}\.animation\(NativeMotion\.disclosureParam\(\)\)/);
+  assert.match(workspace,/Text\(this\.title\)[\s\S]{0,700}LoadingProgress\(\)\.width\(14\)/);
+  assert.doesNotMatch(workspace,/if \(\(this\.connectionPhase === 'opening'[\s\S]{0,180}Text\('正在加载会话…'\)/);
+  assert.doesNotMatch(workspace,/},\s*320\);/);
+  assert.match(workspace,/onScrollStop\(\(\) => \{[\s\S]{0,140}settleScrollTail/);
+  assert.match(index,/再次返回退出App/);
+  assert.match(browser,/generation !== this\.requestGeneration/);
+  assert.match(browser,/const preserveContent = this\.hasLoaded/);
+  assert.match(browser,/this\.navigating = true/);
+  assert.match(browser,/this\.loading && !this\.hasLoaded/);
+  assert.match(browser,/再次返回退出文件浏览/);
+  const diff=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeDiffBlock.ets',
+    import.meta.url),'utf8');
+  assert.doesNotMatch(diff,/drag-handle-outline/);
+  assert.doesNotMatch(diff,/自动换行/);
+  assert.match(diff,/accessibilityText\(this\.showLineNumbers \? '隐藏行号' : '显示行号'\)/);
+  assert.match(diff,/accessibilityText\(this\.copied \? '已复制 Diff' : '复制 Diff'\)/);
 });
 
 test('About reads the installed bundle version instead of a source constant', () => {
@@ -696,7 +744,7 @@ test('todo_write projects structured status rows and the newest replacement plan
   const taskDock=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeTaskDock.ets',
     import.meta.url),'utf8');
   assert.match(taskDock,/constraintSize\(\{ maxHeight: 180 \}\)/);
-  assert.match(taskDock,/NativeMotion\.animate\(this\.getUIContext\(\), 'surface'/);
+  assert.match(taskDock,/NativeMotion\.disclosure\(this\.getUIContext\(\)/);
   assert.match(taskDock,/\.height\(32\)/);
   assert.match(taskDock,/this\.dark \? '#242527' : '#FFFFFF'/);
   const showcase=readFileSync(new URL('../../harmony/entry/src/main/ets/services/StoreShowcaseClient.ets',
@@ -979,7 +1027,7 @@ test('native Chat groups contiguous operations and keeps nested PTC calls in a b
   assert.equal(mixed.map(x=>x.role).join(','),'assistant,process,assistant','finalized assistant blocks retain their source order');
 });
 
-test('process operations receive unique stable render keys and preview requests publish before network probes', () => {
+test('process operations receive unique stable render keys and preview content loads eagerly', () => {
   const types = load('NativeSessionModel', {});
   const { nativeTranscript } = load('NativeTranscript', {'./NativeSessionModel':types});
   const operation = (seq,callId) => Object.assign(new types.NativeMessage(), {
@@ -1004,11 +1052,6 @@ test('process operations receive unique stable render keys and preview requests 
   assert.match(processSource,/child\.renderKey \|\| child\.id/);
   const sourceModel=readFileSync(new URL('../../harmony/entry/src/main/ets/services/NativeListSource.ets', import.meta.url),'utf8');
   assert.match(sourceModel,/base \+ '#' \+ occurrence/);
-
-  const inlineSource=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeInlineText.ets', import.meta.url),'utf8');
-  const openBody=inlineSource.slice(inlineSource.indexOf('private openFile('),inlineSource.indexOf('private async resolveFile('));
-  assert.match(openBody,/this\.openFileView\('file', path, requestId\);/);
-  assert.doesNotMatch(openBody,/statFile|findWorkspaceFile|listFiles/);
 
   const previewSource=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeFilePreview.ets', import.meta.url),'utf8');
   const loadBody=previewSource.slice(previewSource.indexOf('private async load('),previewSource.indexOf('private async loadMetadata('));
@@ -1212,7 +1255,9 @@ test('lightbox zoom keeps translation and does not treat drag release as a backg
   assert.match(source,/\.translate\(\{ x: this\.offsetX, y: this\.offsetY \}\)/);
   assert.match(source,/Date\.now\(\) < this\.suppressClickUntil/);
   assert.match(source,/this\.touchMode === 'pinch' \|\| Date\.now\(\) - this\.lastPinchEndedAt < 450/);
-  assert.match(source,/this\.offsetX = 0;[\s\S]{0,80}this\.offsetY = 0;/);
+  assert.match(source,/NativeImageZoom\.doubleTap\(/);
+  assert.match(source,/this\.toggleDoubleTapZoom\(this\.touchStartX, this\.touchStartY\)/);
+  assert.match(source,/NativeMotion\.spring\(this\.getUIContext\(\)/);
   assert.doesNotMatch(source,/Scroll\(\) \{[\s\S]{0,500}Image\(this\.bitmap\)/);
 });
 
@@ -1223,6 +1268,9 @@ test('workspace image preview uses the same retained pinch and pan interaction',
   assert.match(source,/this\.offsetX \+ dx/);
   assert.match(source,/\.translate\(\{ x: this\.offsetX, y: this\.offsetY \}\)/);
   assert.match(source,/this\.touchMode === 'pinch' \|\| Date\.now\(\) - this\.lastPinchEndedAt < 450/);
+  assert.match(source,/NativeImageZoom\.doubleTap\(/);
+  assert.match(source,/this\.toggleImageDoubleTapZoom\(this\.touchStartX, this\.touchStartY\)/);
+  assert.match(source,/NativeMotion\.spring\(this\.getUIContext\(\)/);
   assert.doesNotMatch(source,/Scroll\(\) \{[\s\S]{0,500}Image\(this\.imageMap\)/);
 });
 

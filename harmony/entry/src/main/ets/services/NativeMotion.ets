@@ -55,10 +55,37 @@ export class NativeMotion {
     }, action);
   }
 
+  /**
+   * Disclosure surfaces share one damped spring so both expansion and collapse
+   * decelerate naturally. The model remains interruptible because state is the
+   * destination while ArkUI owns the in-flight presentation.
+   */
+  static disclosure(context: UIContext, action: () => void): void {
+    if (!NativeMotion.enabled()) {
+      action();
+      return;
+    }
+    context.animateTo({
+      curve: curves.springMotion(0.21, 0.90, 0.22)
+    }, action);
+  }
+
+  static disclosureParam(): AnimateParam {
+    if (!NativeMotion.enabled()) return { duration: 0 };
+    return { curve: curves.springMotion(0.21, 0.90, 0.22) };
+  }
+
   static rowTransition(): TransitionEffect {
     if (!NativeMotion.enabled()) return TransitionEffect.IDENTITY;
     return TransitionEffect.OPACITY.combine(TransitionEffect.translate({ y: 5 }))
       .animation(NativeMotion.implicit('micro'));
+  }
+
+  static disclosureTransition(): TransitionEffect {
+    if (!NativeMotion.enabled()) return TransitionEffect.IDENTITY;
+    return TransitionEffect.OPACITY
+      .combine(TransitionEffect.translate({ y: -4 }))
+      .animation(NativeMotion.disclosureParam());
   }
 
   /**
@@ -67,12 +94,12 @@ export class NativeMotion {
    */
   static workspaceChildrenTransition(): TransitionEffect {
     if (!NativeMotion.enabled()) return TransitionEffect.IDENTITY;
-    const motion = NativeMotion.implicit('micro');
+    const motion = NativeMotion.disclosureParam();
     const enter = TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: -5 }))
+      .combine(TransitionEffect.translate({ y: -6 }))
       .animation(motion);
     const leave = TransitionEffect.OPACITY
-      .combine(TransitionEffect.translate({ y: -3 }))
+      .combine(TransitionEffect.translate({ y: -4 }))
       .animation(motion);
     return TransitionEffect.asymmetric(enter, leave);
   }

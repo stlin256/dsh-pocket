@@ -149,6 +149,12 @@ or real transcript content in source, tests, docs, logs or commits.
   [2026-10-31-structured-plan-update.md](docs/specs/2026-10-31-structured-plan-update.md)
 - Structured plan update and floating task list E2E:
   [2026-10-31-structured-plan-update-e2e.md](docs/testing/2026-10-31-structured-plan-update-e2e.md)
+- Navigation, intentional return, nonlinear motion and file browsing requirement:
+  [2026-10-31-navigation-motion-return-polish.md](docs/requirements/2026-10-31-navigation-motion-return-polish.md)
+- Navigation, intentional return, nonlinear motion and file browsing implementation spec:
+  [2026-10-31-navigation-motion-return-polish.md](docs/specs/2026-10-31-navigation-motion-return-polish.md)
+- Navigation, intentional return, nonlinear motion and file browsing E2E:
+  [2026-10-31-navigation-motion-return-polish-e2e.md](docs/testing/2026-10-31-navigation-motion-return-polish-e2e.md)
 - Native interaction baseline:
   [NATIVE-INTERACTION-SPEC.md](docs/NATIVE-INTERACTION-SPEC.md)
 - Existing shell/performance E2E:

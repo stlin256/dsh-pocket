@@ -6,6 +6,7 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { NativeHarnessClient } from '../services/NativeHarnessClient';
 import { NativeImageAttachment } from '../services/NativeSessionModel';
 import { NativeAttachmentCache } from '../services/NativeAttachmentCache';
+import { NativeImageZoom, NativeImageZoomTarget } from '../services/NativeImageZoom';
 import { NativeMotion } from '../services/NativeMotion';
 import { DSHIcon } from './DSHIcon';
 
@@ -106,14 +107,17 @@ export struct NativeImageLightbox {
     }
   }
 
-  private resetZoom(): void {
+  private toggleDoubleTapZoom(tapX: number, tapY: number): void {
     // Some platform versions synthesize a double tap at the end of a two-finger
-    // pinch. A reset must only follow a deliberate two-tap sequence.
+    // pinch. A zoom change must only follow a deliberate two-tap sequence.
     if (this.touchMode === 'pinch' || Date.now() - this.lastPinchEndedAt < 450) return;
-    NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
-      this.zoom = 1;
-      this.offsetX = 0;
-      this.offsetY = 0;
+    const target: NativeImageZoomTarget = NativeImageZoom.doubleTap(
+      this.zoom, tapX, tapY, this.viewportWidth, this.viewportHeight,
+      this.attachment.width, this.attachment.height, this.offsetX, this.offsetY);
+    NativeMotion.spring(this.getUIContext(), (): void => {
+      this.zoom = target.zoom;
+      this.offsetX = target.offsetX;
+      this.offsetY = target.offsetY;
     });
   }
 
@@ -232,7 +236,7 @@ export struct NativeImageLightbox {
         Math.abs(this.touchStartY - this.lastTapY) < 32) {
         this.lastTapAt = 0;
         this.touchMode = 'none';
-        this.resetZoom();
+        this.toggleDoubleTapZoom(this.touchStartX, this.touchStartY);
         return;
       }
       this.lastTapAt = now;

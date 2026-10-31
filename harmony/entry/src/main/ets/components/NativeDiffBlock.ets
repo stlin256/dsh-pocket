@@ -9,7 +9,6 @@ export struct NativeDiffBlock {
   @Prop document: NativeDiffDocument = new NativeDiffDocument();
   @StorageLink('nativeDark') private dark: boolean = false;
   @State private expanded: boolean = false;
-  @State private wrapped: boolean = false;
   @State private showLineNumbers: boolean = false;
   @State private copied: boolean = false;
 
@@ -27,7 +26,7 @@ export struct NativeDiffBlock {
   }
   private toggle(): void {
     const update = (): void => { this.expanded = !this.expanded; };
-    NativeMotion.animate(this.getUIContext(), 'micro', update);
+    NativeMotion.disclosure(this.getUIContext(), update);
   }
   private toggleLineNumbers(): void {
     NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
@@ -74,7 +73,7 @@ export struct NativeDiffBlock {
     Text(this.lineText(row))
       .fontSize(11).lineHeight('18fp').fontFamily('Noto Sans Mono, monospace')
       .fontColor(this.color(row.kind)).backgroundColor(this.rowBackground(row.kind))
-      .width(this.wrapped ? '100%' : undefined).wordBreak(WordBreak.BREAK_WORD)
+      .wordBreak(WordBreak.BREAK_WORD)
       .padding({ left: 7, right: 7, top: 1, bottom: 1 })
   }
   build() {
@@ -92,13 +91,6 @@ export struct NativeDiffBlock {
           .backgroundColor(this.showLineNumbers ? this.dark ? '#3A3B3F' : '#E9EBEF' : Color.Transparent)
           .accessibilityText(this.showLineNumbers ? '隐藏行号' : '显示行号')
           .onClick((): void => { this.toggleLineNumbers(); })
-        Button({ type: ButtonType.Normal }) {
-          DSHIcon({ glyph: 'drag-handle-outline', glyphSize: 13,
-            color: this.dark ? '#93969B' : '#8A8D91' })
-        }.width(28).height(28).borderRadius(7)
-          .backgroundColor(this.wrapped ? this.dark ? '#3A3B3F' : '#E9EBEF' : Color.Transparent)
-          .accessibilityText(this.wrapped ? '关闭自动换行' : '自动换行')
-          .onClick((): void => { this.wrapped = !this.wrapped; })
         Button({ type: ButtonType.Normal }) {
           DSHIcon({ glyph: this.copied ? 'check-outline' : 'copy-outline', glyphSize: 13,
             color: this.dark ? '#93969B' : '#8A8D91' })
@@ -120,6 +112,7 @@ export struct NativeDiffBlock {
         }.alignItems(HorizontalAlign.Start).width('100%')
       }.scrollable(ScrollDirection.Horizontal).width('100%')
         .constraintSize({ maxHeight: this.expanded ? 420 : 224 })
+        .animation(NativeMotion.disclosureParam())
     }.padding({ left: 7, right: 7, top: 4, bottom: 7 }).width('100%').borderRadius(9)
       .backgroundColor(this.dark ? '#232324' : '#F7F8FA')
   }
