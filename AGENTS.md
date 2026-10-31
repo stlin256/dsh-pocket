@@ -206,6 +206,8 @@ or real transcript content in source, tests, docs, logs or commits.
 - Existing shell/performance E2E:
   [2026-10-30-native-shell-performance-e2e.md](docs/testing/2026-10-30-native-shell-performance-e2e.md)
 - HarmonyOS 7 platform notes: [HARMONY7.md](docs/HARMONY7.md)
+- PDFKit dark-canvas known limitation:
+  [2026-11-01-pdfview-dark-canvas-limitation.md](docs/research/2026-11-01-pdfview-dark-canvas-limitation.md)
 
 ## Upstream Tracking
 
