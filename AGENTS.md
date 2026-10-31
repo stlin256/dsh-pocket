@@ -216,6 +216,14 @@ or real transcript content in source, tests, docs, logs or commits.
   [2026-11-01-turn-file-change-surfaces.md](docs/specs/2026-11-01-turn-file-change-surfaces.md)
 - Per-turn file-change surfaces device E2E:
   [2026-11-01-turn-file-change-surfaces-e2e.md](docs/testing/2026-11-01-turn-file-change-surfaces-e2e.md)
+- Live process, title and streaming requirement:
+  [2026-11-01-live-process-title-streaming.md](docs/requirements/2026-11-01-live-process-title-streaming.md)
+- Live process, title and streaming research:
+  [2026-11-01-live-process-title-streaming.md](docs/research/2026-11-01-live-process-title-streaming.md)
+- Live process, title and streaming implementation spec:
+  [2026-11-01-live-process-title-streaming.md](docs/specs/2026-11-01-live-process-title-streaming.md)
+- Live process, title and streaming device E2E:
+  [2026-11-01-live-process-title-streaming-e2e.md](docs/testing/2026-11-01-live-process-title-streaming-e2e.md)
 
 ## Upstream Tracking
 
