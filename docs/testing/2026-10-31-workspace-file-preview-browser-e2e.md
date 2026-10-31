@@ -15,6 +15,9 @@ Status: pending device execution.
 | PREVIEW-07 | Open code files in several mapped languages | Source is readable, horizontally scrollable, highlighted where supported, and has aligned line numbers | Pending |
 | PREVIEW-08 | Long-press/select code text | Native selection and copy work without triggering mode changes | Pending |
 | PREVIEW-09 | Open an unsupported binary | The reader shows a short unsupported-preview error and keeps download available | Pending |
+| PREVIEW-10 | Scroll a long code file, close it, then open a short code file | The short file starts at line 1 at the top instead of retaining the previous vertical offset | Pass — short-file top alignment verified on device |
+| PREVIEW-11 | Open code mode on a gesture-navigation device | The reader leaves visible clearance above the system navigation area | Pass — bottom reader clearance verified on device |
+| PREVIEW-12 | Pan horizontally from an empty row below a short file, then stop | The full-height text region accepts the pan; the bottom thumb appears only while moving and fades out without covering source text | Pass — manual device verification after HDC visual checks |
 | DOWNLOAD-01 | Tap preview top download and save a PNG | The saved local file is byte-identical to the workspace file | Pending |
 | DOWNLOAD-02 | Tap preview download for a text/code file and cancel the picker | Reader remains mounted; no error toast or remote mutation occurs | Pending |
 | BROWSER-01 | Open chat overflow menu | `文件浏览` appears as a solid first action with a browse glyph | Pending |

@@ -600,7 +600,7 @@ export struct NativeFilePreview {
         .scrollBar(BarState.Auto).edgeEffect(EdgeEffect.None)
     } else {
       NativeCodeViewer({ code: this.text || (this.loading ? '' : '空文件'),
-        language: this.language, startNumber: this.lineStart })
+        language: this.language, startNumber: this.lineStart, identity: this.path })
     }
   }
   @Builder
@@ -651,7 +651,7 @@ export struct NativeFilePreview {
       }
     }.padding({
       left: 12 + this.safeLeft, right: 12 + this.safeRight,
-      top: 8 + this.safeTop, bottom: 10 + this.safeBottom
+      top: 8 + this.safeTop, bottom: 12 + Math.max(16, this.safeBottom)
     }).width('100%').height('100%').backgroundColor(this.dark ? '#151517' : '#FFFFFF')
       .transition(NativeMotion.previewTransition())
   }

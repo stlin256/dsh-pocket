@@ -83,6 +83,32 @@ source line is highlighted with the existing `nativeHighlightCode` language
 mapping. A long line scrolls horizontally instead of wrapping, while the outer
 reader scrolls vertically. The code body remains selectable.
 
+`NativeCodeViewer` owns vertical and horizontal `Scroller` instances. First
+appearance and target-identity changes reset both axes to their start, including
+after a short file reuses the component after a long file. Content growth for
+the same target preserves the reader position.
+
+The platform horizontal scroll bar remains off because its position follows the
+source content height. `NativeCodeViewer` renders a custom position track at
+the bottom of the reader viewport. The track reflects the visible-to-total
+source width ratio and follows `Scroller.currentOffset()` while the user pans
+horizontally. The source surface reserves a compact bottom lane for this track,
+using the track's full hit-box height so the final source row remains readable
+when the vertical reader is scrolled to the end. The track contains only a
+thumb, sits two vp above the reader edge, and follows the same transient
+behavior as the platform vertical bar: it fades in while horizontal scrolling
+is active and fades out after scrolling stops. Reduced motion resolves the
+visibility change directly. Short files keep their content top-aligned while
+the horizontal track, when needed, remains anchored to the bottom of the text
+surface.
+
+The horizontal `Scroll` and the gutter column use the larger of the source
+content height and the measured reader height. Short files therefore expose a
+full-height horizontal pan target and a full-height line-number separator,
+including the empty area below their last source row. Long files continue to
+grow with their content and remain vertically scrollable through the outer
+reader.
+
 Markdown preview is a block projection over the complete loaded text. It keeps
 ordered blocks for headings, quotes, fenced code, tables and paragraphs.
 Inline links use the existing authenticated link surface. Fenced code uses the
@@ -108,6 +134,9 @@ files are neither required nor created by workspace downloads.
 
 The preview toolbar and each regular file row share this service. The row
 download button stops click propagation so the row does not also open the file.
+
+The preview root includes the reported system bottom inset and a compact
+minimum clearance when gesture-navigation devices report a zero-height inset.
 
 ## Browser history and utility menu
 
