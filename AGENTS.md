@@ -155,6 +155,10 @@ or real transcript content in source, tests, docs, logs or commits.
   [2026-11-01-workspace-file-persistent-cache.md](docs/specs/2026-11-01-workspace-file-persistent-cache.md)
 - Workspace file persistent cache device E2E:
   [2026-11-01-workspace-file-persistent-cache-e2e.md](docs/testing/2026-11-01-workspace-file-persistent-cache-e2e.md)
+- Versioned plugin update requirement:
+  [2026-11-01-plugin-update-workflow.md](docs/requirements/2026-11-01-plugin-update-workflow.md)
+- Versioned plugin update implementation spec:
+  [2026-11-01-plugin-update-workflow.md](docs/specs/2026-11-01-plugin-update-workflow.md)
 - Structured plan update and floating task list requirement:
   [2026-10-31-structured-plan-update.md](docs/requirements/2026-10-31-structured-plan-update.md)
 - Structured plan update and floating task list implementation spec:

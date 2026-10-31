@@ -45,6 +45,14 @@ dsh plugin --profile web add <与 App 匹配的 tgz URL>
 
 App 和插件使用独立版本号。升级时使用与 App 对应的固定插件版本，避免 `latest` 在 DSH 版本兼容范围外漂移。版本不匹配时，先查看 Release 说明中的兼容表。
 
+维护者更新插件内容时，从仓库根目录执行：
+
+```sh
+node scripts/update-plugin-version.mjs 0.3.7
+```
+
+该命令会同步 App 安装提示、文档和插件清单，然后自动打包并验证完整 bundle。仅检查版本文本时可追加 `--no-package`。
+
 ## English
 
 DSH Harmony needs `@dsh-harmony/plugin` to add native login, sessions, live updates, notifications and mobile session handoff to DSH. The plugin is maintained in this repository and released alongside the app.
@@ -83,3 +91,18 @@ dsh plugin --profile web add <matching-tgz-url>
 ```
 
 Successful installation does not prove activation. Confirm the bundle is enabled and inspect Harness after restart.
+
+### Update
+
+App and plugin versions are independent. Use the fixed plugin version matching
+the App instead of a drifting `latest` tag.
+
+Maintainers update plugin content from the repository root with:
+
+```sh
+node scripts/update-plugin-version.mjs 0.3.7
+```
+
+The command synchronizes the App installation prompt, documentation and plugin
+manifest, then builds and verifies the complete bundle. Add `--no-package` for a
+review-only version edit.
