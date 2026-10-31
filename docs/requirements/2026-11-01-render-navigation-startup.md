@@ -55,13 +55,27 @@ Date: 2026-11-01
 - `PREVIEW-03` Relative and workspace-root HTML references to stylesheets,
   scripts, images, media and fonts are read through the authenticated,
   session-scoped workspace API where possible.
-- `PREVIEW-04` Referenced resources are bounded by count and byte limits. A
-  missing or oversized optional resource cannot prevent the main document from
-  rendering.
+- `PREVIEW-04` Referenced workspace resources have no fixed count limit and are
+  bounded by one shared byte budget. A missing or oversized optional resource
+  cannot prevent the main document from rendering.
 - `PREVIEW-05` Links from rendered HTML to workspace files use the native file
   navigation history; external HTTP(S) links open outside the app.
 - `PREVIEW-06` Every PDF/HTML preview retains the shared top download action and
   the workspace remains strictly read-only.
+- `PREVIEW-07` A minimal HTML document without author background or text colors
+  remains readable in both themes. The rendered surface reports loading until
+  the main document finishes or fails.
+- `PREVIEW-08` HTML is served through an app-owned intercepted URL response,
+  avoiding unreliable `loadData` encoding behavior while keeping local file
+  access disabled. The loading surface dismisses after the first intercepted
+  document navigation completes.
+- `PREVIEW-09` Absolute HTTP(S) stylesheets, scripts, images, media, fonts and
+  embedded documents referenced by HTML may load with normal no-referrer
+  browser behavior.
+- `PREVIEW-10` A short Markdown document remains anchored to the top content
+  edge in rendered preview mode, including after the reader viewport resizes.
+- `PREVIEW-11` The embedded PDF reader container follows the current light or
+  dark appearance while document page colors and content remain unchanged.
 - `SCROLL-04` The return-to-latest control is a compact 34vp neutral circular
   surface with 60% opacity at rest and 85% while interacting. It uses no
   colored halo.

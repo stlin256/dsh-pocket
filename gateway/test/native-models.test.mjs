@@ -932,7 +932,12 @@ test('HTML resolution, references and inlining stay workspace scoped', () => {
   assert.match(output, /srcset="data:image\/png;base64,AA== 1x,data:image\/png;base64,AA== 2x"/);
   assert.match(output, /href="dshharmony:\/\/file\?path=site%2Fguide\.md"/);
   assert.match(output, /Content-Security-Policy/);
-  assert.match(output, /connect-src 'none'/);
+  assert.match(output, /connect-src http: https:/);
+  const cspSource = '<meta http-equiv="Content-Security-Policy" content="img-src none">' +
+    '<html><head></head><body><img src="a.png"></body></html>';
+  const cspOutput = html.nativeHtmlInline(cspSource, 'site/index.html', new Map());
+  assert.doesNotMatch(cspOutput, /img-src none/);
+  assert.match(cspOutput, /default-src 'none'/);
 });
 
 test('PDF and HTML preview source contracts use bounded native surfaces', () => {
@@ -940,13 +945,62 @@ test('PDF and HTML preview source contracts use bounded native surfaces', () => 
   const html = readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeHtmlPreview.ets', import.meta.url), 'utf8');
   assert.match(preview, /previewPdfLimit: number = 64 \* 1024 \* 1024/);
   assert.match(preview, /NativeFileTransfer\.readComplete\([\s\S]{0,180}previewPdfLimit/);
-  assert.match(preview, /filePreview\.canPreview\(context, uri\)[\s\S]{0,180}filePreview\.openPreview\(context/);
+  assert.match(preview, /from '@kit\.PDFKit'/);
+  assert.match(preview, /PdfView\(\{[\s\S]{0,220}controller: this\.pdfController/);
+  assert.match(preview, /loadDocument\(target\)/);
+  assert.match(preview, /releaseDocument\(\)/);
+  assert.match(preview, /fileIo\.unlinkSync\(this\.pdfUri\)/);
+  assert.doesNotMatch(preview, /filePreview\.openPreview/);
+  assert.doesNotMatch(preview, /setRenderMode|PresetRenderMode/);
+  assert.match(preview, /\.backgroundColor\(this\.dark \? '#151517' : '#EEF0F3'\)/);
   assert.match(preview, /NativeHtmlPreview\(\{ client: this\.client, sessionId: this\.sessionId/);
+  assert.match(preview, /NativeMarkdownPreview\(\{ client: this\.client, sessionId: this\.sessionId/);
+  assert.match(preview, /scrollBar\(BarState\.Auto\)[\s\S]{0,160}align\(Alignment\.TopStart\)/);
+  assert.match(preview, /private markdownViewportHeight: number/);
+  assert.match(preview,
+    /constraintSize\(\{ minHeight: this\.markdownViewportHeight \}\)[\s\S]{0,180}justifyContent\(FlexAlign\.Start\)/);
+  assert.match(preview, /this\.markdownViewportHeight = Math\.max\(1, Number\(area\.height\)\)/);
   assert.match(html, /htmlAssetLimit: number = 32 \* 1024 \* 1024/);
-  assert.match(html, /htmlAssetCountLimit: number = 32/);
-  assert.match(html, /controller\.loadData\(this\.prepared, 'text\/html', 'UTF-8', 'dshharmony:\/\/workspace\/'\)/);
+  assert.doesNotMatch(html, /htmlAssetCountLimit/);
+  assert.match(html, /while \(queue\.length && bytes < htmlAssetLimit\)/);
+  assert.match(html, /onInterceptRequest\([\s\S]{0,260}previewResponse\(\)/);
+  assert.match(html, /setResponseData\(this\.prepared\)/);
+  assert.match(html, /setResponseEncoding\('UTF-8'\)/);
+  assert.match(html, /setResponseMimeType\('text\/html'\)/);
+  assert.match(html, /awaitingPage = true;[\s\S]{0,180}controller\.loadUrl\(this\.previewUrl\(\)\)/);
+  assert.doesNotMatch(html, /loadData\([^\n]*about:blank/);
+  assert.doesNotMatch(html, /loadData\([^\n]*dshharmony:\/\//);
+  assert.doesNotMatch(html, /controller\.loadData\(/);
+  assert.match(html, /dsh-html-preview-base[\s\S]{0,300}color-scheme:/);
+  assert.match(html, /\.metaViewport\(true\)/);
+  assert.match(html, /dsh-html-preview-layout[\s\S]{0,800}max-width:100vw!important/);
+  assert.match(html, /env\(safe-area-inset-bottom,0px\)/);
+  assert.match(html, /::\-webkit\-scrollbar[\s\S]{0,160}display:none/);
+  assert.match(html, /onBusyChange: \(busy: boolean\)/);
+  assert.doesNotMatch(html, /if \(this\.loading\)[\s\S]{0,180}正在读取/);
+  assert.match(html, /\.overScrollMode\(OverScrollMode\.NEVER\)/);
+  assert.match(html, /\.onPageEnd\([\s\S]{0,220}this\.awaitingPage/);
+  assert.match(html, /\.onErrorReceive\([\s\S]{0,260}event\.request\.isMainFrame\(\)/);
   assert.match(html, /\.fileAccess\(false\)/);
   assert.match(html, /onLoadIntercept\(\(event\): boolean => this\.intercept/);
+  assert.match(preview, /LoadingProgress\(\)\.width\(12\)\.height\(12\)/);
+  assert.match(preview, /this\.loading \|\| this\.previewBusy/);
+  assert.match(preview, /onBusyChange: \(busy: boolean\)[\s\S]{0,180}this\.previewBusy = busy/);
+  assert.match(preview, /NativeHtmlPreview\(\{[\s\S]{0,260}layoutWeight\(1\)/);
+  const htmlDocument = readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/services/NativeHtmlDocument.ets', import.meta.url), 'utf8');
+  assert.match(htmlDocument, /img-src data: blob: http: https:/);
+  assert.match(htmlDocument, /style-src[\s\S]{0,100}http: https:/);
+  assert.match(htmlDocument, /connect-src http: https:/);
+  assert.match(htmlDocument, /viewport-fit=cover/);
+});
+
+test('short Markdown preview pins blocks to the top of the reader', () => {
+  const markdown = readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/components/NativeMarkdownPreview.ets', import.meta.url), 'utf8');
+  assert.match(markdown,
+    /\.width\('100%'\)\.justifyContent\(FlexAlign\.Start\)\.alignItems\(HorizontalAlign\.Start\)[\s\S]{0,80}align\(Alignment\.TopStart\)/);
+  assert.doesNotMatch(markdown, /\.justifyContent\(FlexAlign\.Center\)/);
 });
 
 test('workspace document projections preserve source offsets and Markdown block order', () => {

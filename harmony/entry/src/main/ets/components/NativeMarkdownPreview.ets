@@ -54,6 +54,7 @@ export struct NativeMarkdownPreview {
       if (!this.blocks.length) {
         Text('空文件').fontSize(12).fontColor(this.dark ? '#93969B' : '#8A8D91')
       }
-    }.width('100%').alignItems(HorizontalAlign.Start)
+    }.width('100%').justifyContent(FlexAlign.Start).alignItems(HorizontalAlign.Start)
+      .align(Alignment.TopStart)
   }
 }

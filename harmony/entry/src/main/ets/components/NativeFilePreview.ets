@@ -2,8 +2,8 @@ import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { fileIo, fileUri } from '@kit.CoreFileKit';
-import { filePreview } from '@kit.PreviewKit';
+import { fileIo } from '@kit.CoreFileKit';
+import { pdfService, pdfViewManager, PdfView } from '@kit.PDFKit';
 import {
   NativeFilePage,
   NativeFileStat,
@@ -63,6 +63,9 @@ export struct NativeFilePreview {
   @State private lineStart: number = 1;
   @State private pdfUri: string = '';
   @State private pdfOpening: boolean = false;
+  @State private pdfLoaded: boolean = false;
+  @State private previewBusy: boolean = false;
+  @State private markdownViewportHeight: number = 1;
   private source: image.ImageSource | null = null;
   private mounted: boolean = false;
   private textLoaded: boolean = false;
@@ -90,6 +93,7 @@ export struct NativeFilePreview {
   private lastTapX: number = 0;
   private lastTapY: number = 0;
   private lastPinchEndedAt: number = 0;
+  private readonly pdfController: pdfViewManager.PdfController = new pdfViewManager.PdfController();
 
   aboutToAppear(): void {
     this.mounted = true;
@@ -99,6 +103,7 @@ export struct NativeFilePreview {
     this.mounted = false;
     this.generation++;
     this.releaseImage();
+    this.releasePdf();
   }
   private enforceCacheLimit(): void {
     NativeStorageManager.enforceDefaultLimit(
@@ -120,8 +125,9 @@ export struct NativeFilePreview {
     this.offsetX = 0;
     this.offsetY = 0;
     this.applyDescriptor(nativeDocumentDescriptor(this.path));
-    this.pdfUri = '';
+    this.releasePdf();
     this.pdfOpening = false;
+    this.previewBusy = false;
     this.load(this.generation);
   }
   private applyDescriptor(value: NativeDocumentDescriptor): void {
@@ -139,6 +145,14 @@ export struct NativeFilePreview {
     this.source?.release();
     this.imageMap = null;
     this.source = null;
+  }
+  private releasePdf(): void {
+    try { this.pdfController.releaseDocument(); } catch (_) {}
+    this.pdfLoaded = false;
+    if (this.pdfUri) {
+      try { fileIo.unlinkSync(this.pdfUri); } catch (_) {}
+      this.pdfUri = '';
+    }
   }
   private animate(action: () => void): void {
     NativeMotion.animate(this.getUIContext(), 'navigation', action);
@@ -384,19 +398,25 @@ export struct NativeFilePreview {
     }
     return path;
   }
-  private async openPdf(): Promise<void> {
-    if (!this.pdfUri || this.pdfOpening) return;
+  private async openEmbeddedPdf(): Promise<void> {
+    if (!this.pdfUri || this.pdfOpening || this.pdfLoaded) return;
+    const target = this.pdfUri;
     this.pdfOpening = true;
+    this.error = '';
     try {
-      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      const uri = fileUri.getUriFromPath(this.pdfUri);
-      if (!await filePreview.canPreview(context, uri)) throw new Error('PDF preview unavailable');
-      await filePreview.openPreview(context, {
-        title: this.title,
-        uri: uri,
-        mimeType: 'application/pdf'
-      });
-      if (this.mounted) this.error = '';
+      try { this.pdfController.releaseDocument(); } catch (_) {}
+      const result = await this.pdfController.loadDocument(target);
+      if (!this.mounted || target !== this.pdfUri) return;
+      if (result !== pdfService.ParseResult.PARSE_SUCCESS) {
+        this.error = result === pdfService.ParseResult.PARSE_ERROR_PASSWORD ?
+          '此 PDF 需要密码' : '无法打开 PDF';
+        return;
+      }
+      this.pdfController.setPageLayout(pdfService.PageLayout.LAYOUT_SINGLE);
+      this.pdfController.setPageContinuous(true);
+      this.pdfController.setPageFit(pdfService.PageFit.FIT_WIDTH);
+      this.pdfController.enablePageDrag(true, true);
+      this.pdfLoaded = true;
     } catch (_) {
       if (this.mounted) this.error = '无法打开 PDF';
     } finally {
@@ -433,10 +453,10 @@ export struct NativeFilePreview {
     this.version = content.version;
     this.expectedBytes = content.totalBytes;
     this.bytesLabel = content.totalBytes >= 0 ? this.formatBytes(content.totalBytes) : '';
+    this.releasePdf();
     this.pdfUri = await this.materializePdf(context, content);
     if (!this.mounted || generation !== this.generation) return;
     this.loading = false;
-    this.openPdf();
   }
   private async loadHtml(generation: number): Promise<void> {
     const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
@@ -660,9 +680,16 @@ export struct NativeFilePreview {
     Column({ space: 5 }) {
       Row({ space: 4 }) {
         Column({ space: 1 }) {
-          Text(this.title).fontSize(14).fontWeight(FontWeight.Medium).maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .fontColor(this.dark ? '#F9FAFB' : '#17181B')
+          Row({ space: 6 }) {
+            Text(this.title).fontSize(14).fontWeight(FontWeight.Medium).maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis }).layoutWeight(1)
+              .fontColor(this.dark ? '#F9FAFB' : '#17181B')
+            if (this.loading || this.previewBusy || this.pdfOpening) {
+              LoadingProgress().width(12).height(12)
+                .color(this.dark ? '#8AB4FF' : '#3964FE')
+                .accessibilityText('正在加载文件')
+            }
+          }.width('100%')
           if (this.lineLabel || this.bytesLabel) {
             Text([this.lineLabel, this.bytesLabel].filter((value: string) => !!value).join(' · '))
               .fontSize(10).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -717,14 +744,25 @@ export struct NativeFilePreview {
   private textBody() {
     if (this.documentKind === 'html' && this.mode === 'preview') {
       NativeHtmlPreview({ client: this.client, sessionId: this.sessionId,
-        source: this.text, path: this.path })
+        source: this.text, path: this.path,
+        onBusyChange: (busy: boolean): void => { this.previewBusy = busy; } })
+        .layoutWeight(1).width('100%').clip(true)
     } else if (this.documentKind === 'markdown' && this.mode === 'preview') {
       Scroll() {
-        NativeMarkdownPreview({ client: this.client, sessionId: this.sessionId,
-          source: this.text })
-          .width('100%')
+        Column() {
+          NativeMarkdownPreview({ client: this.client, sessionId: this.sessionId,
+            source: this.text })
+            .width('100%')
+        }.width('100%')
+          .constraintSize({ minHeight: this.markdownViewportHeight })
+          .justifyContent(FlexAlign.Start).alignItems(HorizontalAlign.Start)
+          .align(Alignment.TopStart)
       }.layoutWeight(1).width('100%').scrollable(ScrollDirection.Vertical)
         .scrollBar(BarState.Auto).edgeEffect(EdgeEffect.None)
+        .align(Alignment.TopStart)
+        .onAreaChange((_old: Area, area: Area): void => {
+          this.markdownViewportHeight = Math.max(1, Number(area.height));
+        })
     } else {
       NativeCodeViewer({ code: this.text || (this.loading ? '' : '空文件'),
         language: this.language, startNumber: this.lineStart, identity: this.path })
@@ -732,30 +770,31 @@ export struct NativeFilePreview {
   }
   @Builder
   private pdfBody() {
-    Column({ space: 10 }) {
-      DSHIcon({ glyph: 'file-outline', glyphSize: 28,
-        color: this.dark ? '#8AB4FF' : '#3964FE' })
-      Text(this.title).fontSize(14).fontWeight(FontWeight.Medium)
-        .fontColor(this.dark ? '#F9FAFB' : '#17181B')
-      if (this.bytesLabel) {
-        Text(this.bytesLabel).fontSize(11).fontColor(this.dark ? '#93969B' : '#8A8D91')
+    Stack({ alignContent: Alignment.Center }) {
+      PdfView({
+        controller: this.pdfController,
+        pageLayout: pdfService.PageLayout.LAYOUT_SINGLE,
+        isContinuous: true,
+        showScroll: true,
+        pageFit: pdfService.PageFit.FIT_WIDTH
+      }).width('100%').height('100%')
+        .backgroundColor(this.dark ? '#151517' : '#EEF0F3')
+        .onAppear((): void => { this.openEmbeddedPdf(); })
+      if (this.pdfOpening) {
+        LoadingProgress().width(24).height(24).color(this.dark ? '#8AB4FF' : '#3964FE')
+      } else if (this.error) {
+        Column({ space: 10 }) {
+          Text(this.error).fontSize(12).fontColor(this.dark ? '#FFB1B1' : '#B3261E')
+          Button({ type: ButtonType.Normal }) {
+            Text('重试').fontSize(12).fontColor(this.dark ? '#F9FAFB' : '#17181B')
+              .padding({ left: 12, right: 12 })
+          }.height(34).borderRadius(9).backgroundColor(this.dark ? '#353638' : '#EBEEF2')
+            .onClick((): void => { this.openEmbeddedPdf(); })
+        }.padding(14).borderRadius(12)
+          .backgroundColor(this.dark ? '#E6242527' : '#F2FFFFFF')
       }
-      Button({ type: ButtonType.Normal }) {
-        Row({ space: 6 }) {
-          if (this.pdfOpening) {
-            LoadingProgress().width(14).height(14).color('#FFFFFF')
-          } else {
-            DSHIcon({ glyph: 'eye-outline', glyphSize: 14, color: '#FFFFFF' })
-          }
-          Text('打开预览').fontSize(12).fontColor('#FFFFFF')
-        }.padding({ left: 10, right: 12 })
-      }.height(36).borderRadius(10).backgroundColor(this.dark ? '#315ECA' : '#3964FE')
-        .enabled(!this.pdfOpening).accessibilityText('打开 PDF 预览')
-        .onClick((): void => { this.openPdf(); })
-      if (this.error) {
-        Text(this.error).fontSize(11).fontColor(this.dark ? '#FFB1B1' : '#B3261E')
-      }
-    }.layoutWeight(1).justifyContent(FlexAlign.Center)
+    }.layoutWeight(1).width('100%').clip(true)
+      .backgroundColor(this.dark ? '#151517' : '#EEF0F3')
   }
   @Builder
   private body() {

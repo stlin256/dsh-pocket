@@ -131,15 +131,23 @@ function localFileUrl(path: string): string {
 
 function policy(): string {
   return '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; ' +
-    'img-src data:; style-src \'unsafe-inline\' data:; script-src \'unsafe-inline\' data:; ' +
-    'media-src data:; font-src data:; connect-src \'none\'; frame-src \'none\'; object-src data:;">' +
+    'img-src data: blob: http: https:; ' +
+    'style-src \'unsafe-inline\' data: http: https:; ' +
+    'script-src \'unsafe-inline\' data: http: https:; ' +
+    'media-src data: blob: http: https:; font-src data: http: https:; ' +
+    'connect-src http: https:; frame-src http: https:; object-src data: http: https:;">' +
     '<meta name="referrer" content="no-referrer"><meta name="viewport" ' +
-    'content="width=device-width,initial-scale=1,maximum-scale=5">';
+    'content="width=device-width,initial-scale=1,maximum-scale=5,viewport-fit=cover">';
 }
 
 export function nativeHtmlInline(source: string, documentPath: string,
   assets: Map<string, string>): string {
   let output = source;
+  // The preview inlines workspace assets as data URLs. Author CSP declarations
+  // that predate that rewrite combine with the policy below and can otherwise
+  // block those URLs even though the preview itself is sandboxed.
+  output = output.replace(
+    /<meta\b[^>]*http-equiv\s*=\s*(['"])content-security-policy\1[^>]*>/gi, '');
   output = output.replace(/<link\b[^>]*>/gi, (tag: string): string => {
     if (!/\brel\s*=\s*(['"])[^'"]*stylesheet[^'"]*\1/i.test(tag)) return tag;
     const path = nativeHtmlResolveReference(documentPath, attribute(tag, 'href'));

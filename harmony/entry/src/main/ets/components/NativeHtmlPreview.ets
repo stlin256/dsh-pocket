@@ -14,7 +14,6 @@ import {
 import { NativeMotion } from '../services/NativeMotion';
 
 const htmlAssetLimit: number = 32 * 1024 * 1024;
-const htmlAssetCountLimit: number = 32;
 const htmlTextAssetLimit: number = 8 * 1024 * 1024;
 
 @Component
@@ -23,23 +22,28 @@ export struct NativeHtmlPreview {
   sessionId: string = '';
   @Prop @Watch('sourceChanged') source: string = '';
   @Prop path: string = '';
+  onBusyChange: (busy: boolean) => void = (_busy: boolean): void => {};
   @StorageLink('nativeDark') private dark: boolean = false;
   @State private prepared: string = '';
-  @State private loading: boolean = true;
+  @State private previewRevision: number = 0;
   @State private error: string = '';
   private controller: webview.WebviewController = new webview.WebviewController();
   private mounted: boolean = false;
   private controllerReady: boolean = false;
   private loadRevision: number = 0;
-  private loadedRevision: number = -1;
+  private awaitingPage: boolean = false;
+  private busy: boolean = false;
+  private readonly previewOrigin: string = 'https://dsh-harmony.invalid';
 
   aboutToAppear(): void {
     this.mounted = true;
+    this.setBusy(true);
     this.prepare();
   }
   aboutToDisappear(): void {
     this.mounted = false;
     this.loadRevision++;
+    this.setBusy(false);
   }
   private sourceChanged(): void {
     if (this.mounted) this.prepare();
@@ -53,24 +57,67 @@ export struct NativeHtmlPreview {
   private dataUrl(path: string, bytes: Uint8Array): string {
     return 'data:' + nativeHtmlMimeType(path) + ';base64,' + this.base64(bytes);
   }
+  private previewUrl(): string {
+    return this.previewOrigin + '/html-preview?revision=' + this.previewRevision;
+  }
+  private isPreviewUrl(url: string): boolean {
+    return url.startsWith(this.previewOrigin + '/html-preview');
+  }
+  private previewResponse(): WebResourceResponse {
+    const response = new WebResourceResponse();
+    response.setResponseData(this.prepared);
+    response.setResponseEncoding('UTF-8');
+    response.setResponseMimeType('text/html');
+    response.setResponseCode(200);
+    response.setReasonMessage('OK');
+    return response;
+  }
+  private presentation(source: string): string {
+    const background = this.dark ? '#151517' : '#FFFFFF';
+    const foreground = this.dark ? '#E8EAED' : '#17181B';
+    const base = '<style id="dsh-html-preview-base">html{' +
+      'min-height:100%;background:' + background + ';color:' + foreground + ';' +
+      'color-scheme:' + (this.dark ? 'dark' : 'light') + ';}' +
+      'body{color:inherit;}</style>';
+    const layout = '<style id="dsh-html-preview-layout">' +
+      'html,body{width:100%!important;max-width:100vw!important;min-width:0!important;' +
+      'margin-left:auto!important;margin-right:auto!important;overflow-x:hidden!important;}' +
+      'body{padding-bottom:max(20px,env(safe-area-inset-bottom,0px))!important;}' +
+      'body *{box-sizing:border-box;max-width:100%!important;}' +
+      'img,video,canvas,svg,iframe,object,embed{height:auto!important;}' +
+      'pre,table{max-width:100%!important;overflow-x:auto;}' +
+      'html,body{scrollbar-width:none;overscroll-behavior:none;}' +
+      'html::-webkit-scrollbar,body::-webkit-scrollbar{display:none;width:0;height:0;}' +
+      '</style>';
+    if (/<head\b[^>]*>/i.test(source)) {
+      const withBase = source.replace(/<head\b[^>]*>/i,
+        (head: string): string => head + base);
+      return withHeadLayout(withBase, layout);
+    }
+    return base + layout + source;
+  }
+  private setBusy(value: boolean): void {
+    if (this.busy === value) return;
+    this.busy = value;
+    this.onBusyChange(value);
+  }
   private async prepare(): Promise<void> {
     const revision = ++this.loadRevision;
-    this.loading = true;
+    this.setBusy(true);
     this.error = '';
     this.prepared = '';
     const assets: Map<string, string> = new Map<string, string>();
     const css: Map<string, string> = new Map<string, string>();
     const queue: NativeHtmlAssetReference[] = nativeHtmlReferences(this.source, this.path);
+    const imageTagCount = (this.source.match(/<img\b/gi) || []).length;
     const visited: Set<string> = new Set<string>();
-    let count: number = 0;
     let bytes: number = 0;
     try {
-      while (queue.length && count < htmlAssetCountLimit && bytes < htmlAssetLimit) {
+      while (queue.length && bytes < htmlAssetLimit) {
         const item = queue.shift() as NativeHtmlAssetReference;
         const key = item.kind + '\n' + item.path;
         if (!item.path || visited.has(key)) continue;
         visited.add(key);
-        count++;
         try {
           const limit = Math.max(1, Math.min(item.kind === 'binary' ? htmlTextAssetLimit : htmlTextAssetLimit,
             htmlAssetLimit - bytes));
@@ -88,7 +135,10 @@ export struct NativeHtmlPreview {
           } else {
             assets.set(item.path, this.dataUrl(item.path, content.bytes));
           }
-        } catch (_) {
+        } catch (error) {
+          console.warn('NativeHtmlPreview asset read failed kind=' + item.kind +
+            ' mime=' + nativeHtmlMimeType(item.path) +
+            ' reason=' + (error instanceof Error ? error.name : 'unknown'));
           assets.set(item.path, '');
         }
       }
@@ -97,23 +147,26 @@ export struct NativeHtmlPreview {
       });
       const html = nativeHtmlInline(this.source, this.path, assets);
       if (!this.mounted || revision !== this.loadRevision) return;
-      this.prepared = html;
-      this.loading = false;
-      this.loadPrepared();
+      console.info('NativeHtmlPreview assets images=' + imageTagCount +
+        ' references=' + visited.size + ' loaded=' + assets.size + ' bytes=' + bytes);
+      this.prepared = this.presentation(html);
+      this.previewRevision = revision;
+      this.setBusy(true);
+      if (this.controllerReady) {
+        this.awaitingPage = true;
+        try {
+          this.controller.loadUrl(this.previewUrl());
+        } catch (_) {
+          this.awaitingPage = false;
+          this.setBusy(false);
+          this.error = '无法预览此网页';
+        }
+      }
     } catch (_) {
       if (this.mounted && revision === this.loadRevision) {
         this.error = '无法预览此网页';
-        this.loading = false;
+        this.setBusy(false);
       }
-    }
-  }
-  private loadPrepared(): void {
-    if (!this.controllerReady || !this.prepared || this.loadedRevision === this.loadRevision) return;
-    try {
-      this.controller.loadData(this.prepared, 'text/html', 'UTF-8', 'dshharmony://workspace/');
-      this.loadedRevision = this.loadRevision;
-    } catch (_) {
-      if (this.mounted) this.error = '无法预览此网页';
     }
   }
   private async openLocal(path: string): Promise<void> {
@@ -144,7 +197,8 @@ export struct NativeHtmlPreview {
     context.startAbility({ action: 'ohos.want.action.viewData', uri: url }).catch((): void => {});
   }
   private intercept(url: string): boolean {
-    if (url === 'about:blank' || url === 'dshharmony://workspace/') return false;
+    if (this.isPreviewUrl(url)) return false;
+    if (url === 'about:blank' || url.startsWith('data:text/html')) return false;
     if (url.startsWith('dshharmony://file?path=')) {
       const encoded = url.slice('dshharmony://file?path='.length);
       try { this.openLocal(decodeURIComponent(encoded)); } catch (_) {}
@@ -159,26 +213,43 @@ export struct NativeHtmlPreview {
 
   build() {
     Stack({ alignContent: Alignment.Center }) {
-      Web({ src: 'about:blank', controller: this.controller })
-        .width('100%').height('100%')
-        .javaScriptAccess(true).fileAccess(false).domStorageAccess(false)
-        .darkMode(WebDarkMode.Auto).forceDarkAccess(false)
-        .backgroundColor(this.dark ? '#151517' : '#FFFFFF')
-        .onControllerAttached((): void => {
-          this.controllerReady = true;
-          this.loadPrepared();
-        })
-        .onLoadIntercept((event): boolean => this.intercept(event.data.getRequestUrl()))
-      if (this.loading) {
-        Column({ space: 8 }) {
-          LoadingProgress().width(24).height(24).color(this.dark ? '#8AB4FF' : '#3964FE')
-          Text('正在读取…').fontSize(12).fontColor(this.dark ? '#93969B' : '#8A8D91')
-        }.padding(14).borderRadius(14).backgroundColor(this.dark ? '#E6242527' : '#EEFFFFFF')
-          .transition(NativeMotion.rowTransition())
-      } else if (this.error) {
+      if (this.prepared) {
+        Web({ src: this.previewUrl(), controller: this.controller })
+          .width('100%').height('100%')
+          .metaViewport(true)
+          .overScrollMode(OverScrollMode.NEVER)
+          .javaScriptAccess(true).fileAccess(false).domStorageAccess(false)
+          .darkMode(WebDarkMode.Auto).forceDarkAccess(false)
+          .backgroundColor(this.dark ? '#151517' : '#FFFFFF')
+          .onControllerAttached((): void => {
+            this.controllerReady = true;
+            this.awaitingPage = true;
+          })
+          .onInterceptRequest((event): WebResourceResponse | null => {
+            return this.isPreviewUrl(event.request.getRequestUrl()) ? this.previewResponse() : null;
+          })
+          .onLoadIntercept((event): boolean => this.intercept(event.data.getRequestUrl()))
+          .onPageEnd((): void => {
+            this.awaitingPage = false;
+            if (this.mounted) this.setBusy(false);
+          })
+          .onErrorReceive((event): void => {
+            if (!event.request.isMainFrame() || !this.awaitingPage) return;
+            this.awaitingPage = false;
+            if (this.mounted) {
+              this.setBusy(false);
+              this.error = '网页加载失败';
+            }
+          })
+      }
+      if (this.error) {
         Text(this.error).fontSize(13).fontColor(this.dark ? '#FFB1B1' : '#B3261E')
           .padding(14).borderRadius(14).backgroundColor(this.dark ? '#242527' : '#FFFFFF')
       }
     }.width('100%').height('100%')
   }
+}
+
+function withHeadLayout(source: string, layout: string): string {
+  return source.replace(/<\/head>/i, layout + '</head>');
 }
