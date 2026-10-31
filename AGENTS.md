@@ -208,14 +208,6 @@ or real transcript content in source, tests, docs, logs or commits.
 - HarmonyOS 7 platform notes: [HARMONY7.md](docs/HARMONY7.md)
 - PDFKit dark-canvas known limitation:
   [2026-11-01-pdfview-dark-canvas-limitation.md](docs/research/2026-11-01-pdfview-dark-canvas-limitation.md)
-- Per-turn file change summary requirement:
-  [2026-11-01-turn-file-change-summary.md](docs/requirements/2026-11-01-turn-file-change-summary.md)
-- Per-turn file change summary research:
-  [2026-11-01-turn-file-change-summary.md](docs/research/2026-11-01-turn-file-change-summary.md)
-- Per-turn file change summary implementation spec:
-  [2026-11-01-turn-file-change-summary.md](docs/specs/2026-11-01-turn-file-change-summary.md)
-- Per-turn file change summary E2E:
-  [2026-11-01-turn-file-change-summary-e2e.md](docs/testing/2026-11-01-turn-file-change-summary-e2e.md)
 - Per-turn file-change card and live bottom control requirement:
   [2026-11-01-turn-file-change-surfaces.md](docs/requirements/2026-11-01-turn-file-change-surfaces.md)
 - Per-turn file-change data and UI research:
