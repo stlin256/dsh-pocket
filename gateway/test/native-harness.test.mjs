@@ -7,7 +7,7 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { openStore } from '../src/store.mjs';
 import { createApp } from '../src/app.mjs';
 import { normalizeFollow, normalizedHistory, richBlocks, normalizeRecord } from '../src/native-protocol.mjs';
-import { nativeHeartbeatPolicy } from '../src/native-harness.mjs';
+import { changedFilesSummary, nativeHeartbeatPolicy } from '../src/native-harness.mjs';
 
 const origin = 'https://dsh.example.com';
 
@@ -24,6 +24,24 @@ async function setup(t, options = {}) {
     if (req.method === 'GET' || req.method === 'HEAD') {
       assert.equal(req.headers.cookie, 'harness=server-only');
       const route = new URL(req.url, 'http://localhost');
+      if (route.pathname === '/api/changes.summary') {
+        assert.equal(route.searchParams.get('seq'), '17');
+        if (options.changesUnavailable) { res.writeHead(404).end(); return; }
+        if (options.changesMalformed) {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ turn: 1, cwd: '/private/workspace', total: 1, added: 4, deleted: 2,
+            files: [{ path: 'src/app.ts', display: 'app.ts', added: 4, deleted: 2, binary: false, cookie: 'no' }] }));
+          return;
+        }
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ turn: 1, cwd: '/private/workspace',
+          snapshot: { before: 'private-before', after: 'private-after' },
+          total: 2, added: 7, deleted: 3, files: [
+            { path: 'src/app.ts', display: 'app.ts', added: 5, deleted: 3 },
+            { path: 'assets/logo.bin', display: 'logo.bin', added: 0, deleted: 0, binary: true }
+          ] }));
+        return;
+      }
       if (options.unavailableExports) { res.writeHead(404).end(); return; }
       if (options.htmlExport) { res.setHeader('Content-Type','text/html'); res.end('<h1>Authentication required</h1>'); return; }
       assert.equal(route.searchParams.get('sessionId'), 'session');
@@ -207,6 +225,34 @@ test('header utilities export complete Host content and profile writes use named
     {ns:'provider',field:'apiKey',value:'never'}, {ns:'ui-chat',field:'transcriptView',value:'invented'},
     {ns:'ui-theme',field:'fontSize',value:23}, {ns:'ui-chat',field:'collapseTiming',value:'completion',revision:-1}
   ]) assert.equal((await call('/pocket/api/native/operation',{operation:'settingsSet',revision:4,...body})).status,400);
+});
+
+test('native changed-files bridge forwards only the authenticated stopped-turn summary', async t => {
+  const { call } = await setup(t);
+  const response = await call('/pocket/api/native/changes/summary?sessionId=session&seq=17');
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(response.text), {
+    turn: 1,
+    total: 2,
+    added: 7,
+    deleted: 3,
+    files: [
+      { path: 'src/app.ts', display: 'app.ts', added: 5, deleted: 3 },
+      { path: 'assets/logo.bin', display: 'logo.bin', added: 0, deleted: 0, binary: true }
+    ]
+  });
+  assert.equal((await call('/pocket/api/native/changes/summary?sessionId=../bad&seq=17')).status, 400);
+  assert.equal((await call('/pocket/api/native/changes/summary?sessionId=session&seq=-1')).status, 400);
+  assert.equal((await call('/pocket/api/native/changes/summary?sessionId=session&seq=17', undefined, false)).status, 401);
+
+  const unavailable = await setup(t, { changesUnavailable: true });
+  assert.equal((await unavailable.call('/pocket/api/native/changes/summary?sessionId=session&seq=17')).status, 404);
+  const malformed = await setup(t, { changesMalformed: true });
+  assert.equal((await malformed.call('/pocket/api/native/changes/summary?sessionId=session&seq=17')).status, 502);
+  assert.equal(changedFilesSummary({
+    turn: 1, total: 1, added: 1, deleted: 0,
+    files: [{ path: 'a', display: 'a', added: 1, deleted: 0, binary: false }]
+  }), null);
 });
 
 test('native file preview uses the official workspaceFiles scope and bounded ranges', async t => {

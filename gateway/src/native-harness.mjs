@@ -10,6 +10,41 @@ export function nativeHeartbeatPolicy(profile = 'foreground') {
     { intervalMs: 5000, deadlineMs: 20000, openingMs: 30000 };
 }
 
+function nonNegativeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+/** Strip Host-only cwd/snapshot fields and reject malformed summary records. */
+export function changedFilesSummary(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { turn, files, total, added, deleted } = value;
+  if (!Number.isSafeInteger(turn) || turn < 1 || !Array.isArray(files) || files.length > 500 ||
+      !nonNegativeInteger(total) || total < files.length || total > 1_000_000 ||
+      !nonNegativeInteger(added) || !nonNegativeInteger(deleted)) return null;
+  const rows = [];
+  for (const file of files) {
+    if (!file || typeof file !== 'object' || Array.isArray(file)) return null;
+    if (Object.keys(file).some(key => ![
+      'path', 'display', 'added', 'deleted', 'binary', 'oversized'
+    ].includes(key))) return null;
+    const { path, display, added: fileAdded, deleted: fileDeleted, binary, oversized } = file;
+    if (typeof path !== 'string' || !path || path.length > 4096 ||
+        typeof display !== 'string' || !display || display.length > 8192 ||
+        !nonNegativeInteger(fileAdded) || !nonNegativeInteger(fileDeleted) ||
+        (binary !== undefined && binary !== true) ||
+        (oversized !== undefined && oversized !== true)) return null;
+    rows.push({
+      path,
+      display,
+      added: fileAdded,
+      deleted: fileDeleted,
+      ...(binary === true ? { binary: true } : {}),
+      ...(oversized === true ? { oversized: true } : {})
+    });
+  }
+  return { turn, files: rows, total, added, deleted };
+}
+
 export function createNativeHarness({ upstream, upstreamCookie, publicOrigin, ownerOf }) {
   const credential = () => typeof upstreamCookie === 'function' ? upstreamCookie() : upstreamCookie;
   const connections = new Map();
@@ -151,6 +186,36 @@ export function createNativeHarness({ upstream, upstreamCookie, publicOrigin, ow
     app.get('/pocket/api/native/workspaces', guarded(async (_req, res, signal) => {
       try { res.json({ available: true, ...await workspaceBaseline(signal) }); }
       catch { if (!res.destroyed) res.json({ available: false, items: [], archivedSessionIds: [], pinnedSessionIds: [] }); }
+    }));
+    app.get('/pocket/api/native/changes/summary', guarded(async (req, res, signal) => {
+      const id = req.query?.sessionId;
+      const rawSeq = req.query?.seq;
+      if (!sessionIdValid(id) || typeof rawSeq !== 'string' || !/^(?:0|[1-9]\d*)$/.test(rawSeq) ||
+          !Number.isSafeInteger(Number(rawSeq))) return res.sendStatus(400);
+      const url = new URL('/api/changes.summary', target);
+      url.searchParams.set('sessionId', id);
+      url.searchParams.set('seq', rawSeq);
+      const response = await fetch(url, {
+        redirect: 'error',
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000),
+        headers: { Origin: target.origin, Cookie: await credential(), Accept: 'application/json' }
+      });
+      if (response.status === 404) { await response.body?.cancel(); res.sendStatus(404); return; }
+      if (!response.ok) { await response.body?.cancel(); res.sendStatus(502); return; }
+      const type = (response.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase();
+      const length = Number(response.headers.get('content-length'));
+      if (type !== 'application/json' || (Number.isFinite(length) && length > 2 * 1024 * 1024)) {
+        await response.body?.cancel();
+        res.sendStatus(502);
+        return;
+      }
+      const body = await response.text();
+      if (Buffer.byteLength(body) > 2 * 1024 * 1024) { res.sendStatus(502); return; }
+      let value;
+      try { value = changedFilesSummary(JSON.parse(body)); } catch { value = null; }
+      if (!value) { res.sendStatus(502); return; }
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(value);
     }));
     app.get('/pocket/api/native/export', guarded(async (req, res, signal) => {
       if (!sessionIdValid(req.query.sessionId) || !['markdown', 'zip'].includes(req.query.format) ||

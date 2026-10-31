@@ -466,6 +466,17 @@ export class NativeHarnessClient {
   async operation(body: string): Promise<string> {
     return this.request('/pocket/api/native/operation', http.RequestMethod.POST, body);
   }
+  /**
+   * Official stopped-turn change summary. DSH keeps the summary in Host
+   * memory and serves it by the `workspace/changes` event sequence.
+   */
+  async turnChangeSummary(id: string, seq: number): Promise<string> {
+    if (!/^[A-Za-z0-9_-]{1,160}$/.test(id) || !Number.isSafeInteger(seq) || seq < 0) {
+      throw new Error('Invalid turn-change coordinates');
+    }
+    return this.request('/pocket/api/native/changes/summary?sessionId=' +
+      encodeURIComponent(id) + '&seq=' + seq.toString());
+  }
   async exportSession(id: string, format: string, receive: (part: ArrayBuffer) => void): Promise<void> {
     if (!/^[A-Za-z0-9_-]{1,160}$/.test(id) || !['markdown', 'zip'].includes(format)) throw new Error('Invalid export');
     const task = http.createHttp();
