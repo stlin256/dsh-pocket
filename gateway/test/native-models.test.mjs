@@ -849,6 +849,10 @@ test('turn change references use durable event sequence and official summary tot
     turn: 1, total: 1, added: 1, deleted: 0,
     files: [{ path: 'a', display: 'a', added: 1, deleted: 0, binary: false }]
   }), 'turn:1'), null);
+  assert.equal(turnChanges.nativeTurnChangeSummaryFromJson(JSON.stringify({
+    turn: 2, total: 1, added: 1, deleted: 0,
+    files: [{ path: 'a', display: 'a', added: 1, deleted: 0 }]
+  }), 'turn:1'), null);
 });
 
 test('turn change card and bottom live control keep compact ownership and motion contracts', () => {

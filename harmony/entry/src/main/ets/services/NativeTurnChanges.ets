@@ -56,7 +56,7 @@ function documentFiles(document: NativeDiffDocument): NativeTurnFileChange[] {
     if (index === undefined) {
       const file = new NativeTurnFileChange();
       file.path = display;
-    file.display = display;
+      file.display = display;
       file.added = added;
       file.removed = removed;
       indexes.set(key, files.length);
@@ -231,10 +231,14 @@ export function nativeTurnChangeSummaryFromJson(value: string, turnKey: string,
   try {
     const root = JSON.parse(value) as Record<string, Object>;
     const filesValue = root.files;
+    const turn = root.turn;
     const total = root.total;
     const added = root.added;
     const removed = root.deleted;
-    if (!Array.isArray(filesValue) || filesValue.length > 500 ||
+    const prefix = 'turn:';
+    if (!Number.isSafeInteger(turn) || (turn as number) < 1 ||
+        !turnKey.startsWith(prefix) || Number(turnKey.slice(prefix.length)) !== (turn as number) ||
+        !Array.isArray(filesValue) || filesValue.length > 500 ||
         !Number.isSafeInteger(total) || (total as number) < filesValue.length ||
         (total as number) > 1000000 || !nonNegativeInteger(added) ||
         !nonNegativeInteger(removed)) return null;

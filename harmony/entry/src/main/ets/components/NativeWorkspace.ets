@@ -1242,19 +1242,20 @@ export struct NativeWorkspace {
     this.navigationChanged();
     this.model = this.client.models.get(id) || new NativeSessionModel();
     this.client.models.set(id, this.model);
-    this.rememberTurnChangeReferences(Array.from(this.model.journal.values()));
     const capabilities = this.utilityCapabilities.get(id);
     this.utilityKnown = capabilities !== undefined;
     this.exportCapabilities = capabilities || new NativeExportCapabilities();
     this.prefetchUtilities(id);
     this.previousRows = this.model.messages;
     this.turnChanges = [];
+    this.turnChangesInputSignature = '';
     this.officialTurnChanges = [];
     this.officialTurnChangeSequences.clear();
     this.officialTurnChangeRequests.clear();
     this.officialTurnChangeQueue = [];
     this.officialTurnChangeActive = 0;
     this.officialTurnChangeGeneration++;
+    this.rememberTurnChangeReferences(Array.from(this.model.journal.values()));
     this.liveTurnChanges = new NativeTurnChangeSummary();
     this.liveTurnChangesVisible = false;
     this.renderTranscript();
@@ -1423,10 +1424,13 @@ export struct NativeWorkspace {
     if (!id || !raws.length) return;
     nativeTurnChangeReferences(raws).forEach((reference: NativeTurnChangeReference): void => {
       const current = this.officialTurnChangeSequences.get(reference.turnKey) || -1;
-      if (current >= reference.seq) return;
+      if (current > reference.seq) return;
       this.officialTurnChangeSequences.set(reference.turnKey, reference.seq);
       const key = id + '\n' + reference.turnKey + '\n' + reference.seq;
       if (this.officialTurnChangeRequests.has(key)) return;
+      if (current === reference.seq &&
+          this.officialTurnChanges.some((summary: NativeTurnChangeSummary): boolean =>
+            summary.turnKey === reference.turnKey)) return;
       this.officialTurnChangeRequests.add(key);
       this.officialTurnChangeQueue.push(reference);
     });
