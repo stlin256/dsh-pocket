@@ -133,7 +133,7 @@ export struct NativeTurnChangesCard {
   }
 
   private toggle(): void {
-    if (this.summary.fileCount <= 3) return;
+    if (this.summary.files.length <= 3) return;
     NativeMotion.disclosure(this.getUIContext(), (): void => {
       this.expanded = !this.expanded;
     });
@@ -154,19 +154,30 @@ export struct NativeTurnChangesCard {
     return '已完成';
   }
 
+  private fileMetric(file: NativeTurnFileChange): string {
+    if (file.binary) return '二进制';
+    if (file.oversized) return '过大';
+    return '+' + formattedCount(file.added) + '  -' + formattedCount(file.removed);
+  }
+
   @Builder
   private fileRow(file: NativeTurnFileChange) {
     Button({ type: ButtonType.Normal }) {
       Row({ space: 8 }) {
         DSHIcon({ glyph: 'file-outline', glyphSize: 14,
           color: this.dark ? '#BFC3C8' : '#5F646A' })
-        Text(file.path).fontSize(12).layoutWeight(1).maxLines(1)
+        Text(file.display || file.path).fontSize(12).layoutWeight(1).maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .fontColor(this.dark ? '#E8E9EB' : '#2B2D30')
-        Text('+' + formattedCount(file.added)).fontSize(11).fontWeight(FontWeight.Medium)
-          .fontColor(this.metricColor(true))
-        Text('-' + formattedCount(file.removed)).fontSize(11).fontWeight(FontWeight.Medium)
-          .fontColor(this.metricColor(false))
+        if (file.binary || file.oversized) {
+          Text(this.fileMetric(file)).fontSize(11)
+            .fontColor(this.dark ? '#A8ABAF' : '#686D73')
+        } else {
+          Text('+' + formattedCount(file.added)).fontSize(11).fontWeight(FontWeight.Medium)
+            .fontColor(this.metricColor(true))
+          Text('-' + formattedCount(file.removed)).fontSize(11).fontWeight(FontWeight.Medium)
+            .fontColor(this.metricColor(false))
+        }
       }.width('100%').padding({ left: 10, right: 10 })
     }.height(38).width('100%').padding(0).borderRadius(8)
       .backgroundColor(Color.Transparent)
@@ -199,15 +210,14 @@ export struct NativeTurnChangesCard {
                   .fontColor(this.dark ? '#8F9296' : '#92969B')
               }.width('100%')
             }.layoutWeight(1).alignItems(HorizontalAlign.Start)
-            if (this.summary.fileCount > 3) {
+            if (this.summary.files.length > 3) {
               DSHIcon({ glyph: this.expanded ? 'chevron-up-outline' : 'chevron-down-outline',
                 glyphSize: 12, color: this.dark ? '#9A9DA1' : '#777B80' })
             }
           }.width('100%').padding({ left: 10, right: 5 })
         }.layoutWeight(1).height(56).padding(0).borderRadius(0)
           .backgroundColor(Color.Transparent)
-          .enabled(this.summary.fileCount > 3)
-          .accessibilityText(this.summary.fileCount > 3 ?
+          .accessibilityText(this.summary.files.length > 3 ?
             (this.expanded ? '收起' : '展开') + '本次修改的文件' :
             '本次修改了 ' + this.summary.fileCount + ' 个文件')
           .onClick((): void => { this.toggle(); })
@@ -238,11 +248,10 @@ export struct NativeTurnChangesCard {
           this.fileRow(file)
         }, (file: NativeTurnFileChange) => file.path)
       }
-      if (this.summary.fileCount > 3) {
+      if (this.summary.files.length > 3) {
         Button({ type: ButtonType.Normal }) {
           Row({ space: 4 }) {
-            Text(this.expanded ? '收起文件' :
-              '再显示 ' + (this.summary.fileCount - 3) + ' 个文件').fontSize(11)
+            Text(this.expanded ? '收起文件' : '再显示 ' + (this.summary.files.length - 3) + ' 个文件').fontSize(11)
             DSHIcon({ glyph: this.expanded ? 'chevron-up-outline' : 'chevron-down-outline',
               glyphSize: 10, color: this.dark ? '#A8ABAF' : '#686D73' })
           }

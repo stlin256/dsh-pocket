@@ -3,7 +3,7 @@ import { util } from '@kit.ArkTS';
 import { common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { NativeHarnessClient, NativeHttpError, NativeAttachmentDraft } from '../services/NativeHarnessClient';
-import { NativeFrame, NativeMessage, NativeSession, NativeSessionModel, NativePendingQuestion,
+import { NativeFrame, NativeJournalEntry, NativeMessage, NativeSession, NativeSessionModel, NativePendingQuestion,
   NativeWorkspaceItem, NativeWorkspaceSnapshot, NativeWorkspaceRow, NativeImagePreviewRequest,
   NativeFileViewRequest, nativeWorkspaceRows, nativeToolsParent, nativeWorkspaceDragOrder,
   nativeBackToBottomAvailable, nativeBackToBottomHasNewContent } from '../services/NativeSessionModel';
@@ -39,7 +39,10 @@ import {
   nativeLiveTurnChange,
   nativeTurnChangeFor,
   nativeTurnChangeInputSignature,
+  nativeTurnChangeReferences,
+  nativeTurnChangeSummaryFromJson,
   nativeTurnChanges,
+  NativeTurnChangeReference,
   NativeTurnChangeSummary
 } from '../services/NativeTurnChanges';
 import { nativeFileTarget } from '../services/NativeLinkResolver';
@@ -181,8 +184,14 @@ export struct NativeWorkspace {
   @State private footerCopiedId: string = '';
   @State private taskPlan: NativePlanDocument = new NativePlanDocument();
   @State private turnChanges: NativeTurnChangeSummary[] = [];
+  @State private officialTurnChanges: NativeTurnChangeSummary[] = [];
   @State private liveTurnChanges: NativeTurnChangeSummary = new NativeTurnChangeSummary();
   @State private liveTurnChangesVisible: boolean = false;
+  private officialTurnChangeSequences: Map<string, number> = new Map<string, number>();
+  private officialTurnChangeRequests: Set<string> = new Set<string>();
+  private officialTurnChangeQueue: NativeTurnChangeReference[] = [];
+  private officialTurnChangeActive: number = 0;
+  private officialTurnChangeGeneration: number = 0;
   private sessionSource: NativeListSource<NativeWorkspaceRow> = new NativeListSource<NativeWorkspaceRow>();
   private source: NativeListSource<NativeMessage> = new NativeListSource<NativeMessage>();
   private scroller: Scroller = new Scroller();
@@ -1233,12 +1242,19 @@ export struct NativeWorkspace {
     this.navigationChanged();
     this.model = this.client.models.get(id) || new NativeSessionModel();
     this.client.models.set(id, this.model);
+    this.rememberTurnChangeReferences(Array.from(this.model.journal.values()));
     const capabilities = this.utilityCapabilities.get(id);
     this.utilityKnown = capabilities !== undefined;
     this.exportCapabilities = capabilities || new NativeExportCapabilities();
     this.prefetchUtilities(id);
     this.previousRows = this.model.messages;
     this.turnChanges = [];
+    this.officialTurnChanges = [];
+    this.officialTurnChangeSequences.clear();
+    this.officialTurnChangeRequests.clear();
+    this.officialTurnChangeQueue = [];
+    this.officialTurnChangeActive = 0;
+    this.officialTurnChangeGeneration++;
     this.liveTurnChanges = new NativeTurnChangeSummary();
     this.liveTurnChangesVisible = false;
     this.renderTranscript();
@@ -1263,6 +1279,7 @@ export struct NativeWorkspace {
       if (!this.mounted || selection !== this.selectionGeneration || this.selected !== id) return;
       if (cached !== null && cached.messages.length) {
         this.model.restore(cached);
+        this.rememberTurnChangeReferences(Array.from(this.model.journal.values()));
         this.followTail = true;
         this.paint();
       }
@@ -1312,6 +1329,11 @@ export struct NativeWorkspace {
       }
       const wasActive = this.running || this.waiting;
       this.model.apply(frame);
+      if (frame.type === 'event') {
+        this.rememberTurnChangeReferences((frame.journal || []).map((entry: NativeJournalEntry): string => entry.raw));
+      } else if (frame.type === 'snapshot') {
+        this.rememberTurnChangeReferences(Array.from(this.model.journal.values()));
+      }
       if (frame.type === 'snapshot') {
         clearTimeout(this.settlementTimer); this.settlementTimer = -1;
       } else if (frame.type === 'end' && this.model.settlementPending()) {
@@ -1386,20 +1408,85 @@ export struct NativeWorkspace {
       }, 0);
     }
   }
+  private projectedTurnChange(turnKey: string): NativeTurnChangeSummary | null {
+    return nativeTurnChangeFor(this.turnChanges, turnKey);
+  }
+  private turnChangeOutcome(turnKey: string): string {
+    const projected = this.projectedTurnChange(turnKey);
+    if (projected) return projected.outcome;
+    const footer = this.model.messages.find((row: NativeMessage): boolean =>
+      row.role === 'turn' && row.turnKey === turnKey);
+    return footer?.footerOutcome || footer?.outcome || '';
+  }
+  private rememberTurnChangeReferences(raws: string[]): void {
+    const id = this.selected;
+    if (!id || !raws.length) return;
+    nativeTurnChangeReferences(raws).forEach((reference: NativeTurnChangeReference): void => {
+      const current = this.officialTurnChangeSequences.get(reference.turnKey) || -1;
+      if (current >= reference.seq) return;
+      this.officialTurnChangeSequences.set(reference.turnKey, reference.seq);
+      const key = id + '\n' + reference.turnKey + '\n' + reference.seq;
+      if (this.officialTurnChangeRequests.has(key)) return;
+      this.officialTurnChangeRequests.add(key);
+      this.officialTurnChangeQueue.push(reference);
+    });
+    this.pumpOfficialTurnChanges();
+  }
+  private pumpOfficialTurnChanges(): void {
+    const id = this.selected;
+    if (!id) return;
+    while (this.officialTurnChangeActive < 3 && this.officialTurnChangeQueue.length) {
+      const reference = this.officialTurnChangeQueue.shift() as NativeTurnChangeReference;
+      if (this.officialTurnChangeSequences.get(reference.turnKey) !== reference.seq) continue;
+      const key = id + '\n' + reference.turnKey + '\n' + reference.seq;
+      const generation = this.officialTurnChangeGeneration;
+      this.officialTurnChangeActive++;
+      this.client.turnChangeSummary(id, reference.seq)
+        .then((body: string): void => {
+          if (!this.mounted || this.selected !== id ||
+              generation !== this.officialTurnChangeGeneration ||
+              this.officialTurnChangeSequences.get(reference.turnKey) !== reference.seq) return;
+          const summary = nativeTurnChangeSummaryFromJson(body, reference.turnKey,
+            this.turnChangeOutcome(reference.turnKey));
+          if (!summary) {
+            this.officialTurnChangeRequests.delete(key);
+            return;
+          }
+          this.officialTurnChanges = this.officialTurnChanges.filter((item: NativeTurnChangeSummary): boolean =>
+            item.turnKey !== reference.turnKey).concat([summary]);
+          this.paint();
+        })
+        .catch((): void => {
+          if (this.mounted && this.selected === id &&
+              generation === this.officialTurnChangeGeneration) {
+            this.officialTurnChangeRequests.delete(key);
+          }
+        })
+        .finally((): void => {
+          if (generation === this.officialTurnChangeGeneration) {
+            this.officialTurnChangeActive = Math.max(0, this.officialTurnChangeActive - 1);
+            this.pumpOfficialTurnChanges();
+          }
+        });
+    }
+  }
   private renderTranscript(): void {
     const rows = nativeTranscript(this.model.messages, this.model.running, this.model.streamTools, this.model.streamReasoning, this.model.streamText);
     const changeSignature = nativeTurnChangeInputSignature(rows, this.model.streamTools);
     if (changeSignature !== this.turnChangesInputSignature) {
       this.turnChangesInputSignature = changeSignature;
       this.turnChanges = nativeTurnChanges(rows);
-      const live = nativeLiveTurnChange(rows,
-        this.model.running || this.model.waiting || this.running || this.waiting);
-      if (live) {
-        this.liveTurnChanges = live;
-        this.liveTurnChangesVisible = true;
-      } else {
-        this.liveTurnChangesVisible = false;
-      }
+    }
+    // Activity can change without a tool/footer signature change. Resolve
+    // visibility on every projection so a completed/stopped turn hides the
+    // live pill immediately and never leaks into the next state.
+    const live = nativeLiveTurnChange(rows,
+      this.model.running || this.model.waiting || this.running || this.waiting);
+    if (live) {
+      this.liveTurnChanges = live;
+      this.liveTurnChangesVisible = true;
+    } else {
+      this.liveTurnChangesVisible = false;
     }
     const plan = nativeLatestPlan(rows);
     const planSignature = nativePlanSignature(plan);
@@ -1416,7 +1503,20 @@ export struct NativeWorkspace {
     this.source.set(visible, (row: NativeMessage): string => row.id);
   }
   private turnChangeFor(turnKey: string): NativeTurnChangeSummary {
-    return nativeTurnChangeFor(this.turnChanges, turnKey) || new NativeTurnChangeSummary();
+    const official = this.officialTurnChanges.find((summary: NativeTurnChangeSummary): boolean =>
+      summary.turnKey === turnKey);
+    if (official) {
+      const value = new NativeTurnChangeSummary();
+      value.turnKey = official.turnKey;
+      value.files = official.files;
+      value.fileCount = official.fileCount;
+      value.added = official.added;
+      value.removed = official.removed;
+      value.running = false;
+      value.outcome = this.turnChangeOutcome(turnKey) || official.outcome;
+      return value;
+    }
+    return this.projectedTurnChange(turnKey) || new NativeTurnChangeSummary();
   }
   private openTurnChangeFile(path: string): void {
     if (!this.selected || !path) return;
@@ -1694,7 +1794,9 @@ export struct NativeWorkspace {
         // LazyForEach can leave the anchor unmeasured during a fast fling.
         // Prepend the page without forcing a scroll correction in that case.
       }
-      this.model.prepend(page); this.paint();
+      this.model.prepend(page);
+      this.rememberTurnChangeReferences(Array.from(this.model.journal.values()));
+      this.paint();
       if (!nativeHistoryPageAdvanced(historyBefore, page.beforeSeq, previousRows,
         this.model.messages.length, page.hasMore)) {
         throw new Error('History page did not advance');
@@ -2325,6 +2427,7 @@ export struct NativeWorkspace {
             if (height > 0 && height !== this.composerHeight) this.composerHeight = height;
           })
         }.width('100%')
+      }
     }.padding({ left: 12, right: 12, top: this.safeTop + 4,
       bottom: 0 })
       .height('100%').layoutWeight(1)

@@ -3,8 +3,11 @@ import { NativeDiffDocument, NativeDiffRow, nativeDiff } from './NativeDiff';
 
 export class NativeTurnFileChange {
   path: string = '';
+  display: string = '';
   added: number = 0;
   removed: number = 0;
+  binary: boolean = false;
+  oversized: boolean = false;
 }
 
 export class NativeTurnChangeSummary {
@@ -17,17 +20,20 @@ export class NativeTurnChangeSummary {
   outcome: string = '';
 }
 
+export class NativeTurnChangeReference {
+  turnKey: string = '';
+  turn: number = 0;
+  seq: number = 0;
+}
+
 function mutationTool(tool: NativeMessage): boolean {
   return tool.toolName === 'write' || tool.toolName === 'edit' ||
     tool.toolName === 'str_replace_editor' || tool.toolName === 'apply_patch';
 }
 
-function countableMutation(tool: NativeMessage, finalizedTurn: boolean): boolean {
+function countableMutation(tool: NativeMessage): boolean {
   const settled = tool.phase === 'result' || tool.status === 'success';
-  const active = tool.phase === 'preparing' || tool.phase === 'start' ||
-    tool.status === 'preparing' || tool.status === 'running';
-  if (!settled && !active) return false;
-  if (!settled && finalizedTurn) return false;
+  if (!settled) return false;
   if (tool.failed || tool.status === 'error' || tool.status === 'interrupted') return false;
   if (tool.outcome === 'failed' || tool.outcome === 'error' ||
       tool.outcome === 'interrupted' || tool.outcome === 'cancelled') return false;
@@ -50,6 +56,7 @@ function documentFiles(document: NativeDiffDocument): NativeTurnFileChange[] {
     if (index === undefined) {
       const file = new NativeTurnFileChange();
       file.path = display;
+    file.display = display;
       file.added = added;
       file.removed = removed;
       indexes.set(key, files.length);
@@ -82,23 +89,30 @@ function addSummaryFile(summary: NativeTurnChangeSummary, key: string,
   if (index < 0) {
     const file = new NativeTurnFileChange();
     file.path = incoming.path;
+    file.display = incoming.display || incoming.path;
     file.added = incoming.added;
     file.removed = incoming.removed;
+    file.binary = incoming.binary;
+    file.oversized = incoming.oversized;
     summary.files.push(file);
   } else {
     summary.files[index].added += incoming.added;
     summary.files[index].removed += incoming.removed;
   }
   summary.fileCount = summary.files.length;
-  summary.added = summary.files.reduce((total: number, file: NativeTurnFileChange): number =>
-    total + file.added, 0);
-  summary.removed = summary.files.reduce((total: number, file: NativeTurnFileChange): number =>
-    total + file.removed, 0);
+  let added = 0;
+  let removed = 0;
+  for (let cursor = 0; cursor < summary.files.length; cursor++) {
+    added += summary.files[cursor].added;
+    removed += summary.files[cursor].removed;
+  }
+  summary.added = added;
+  summary.removed = removed;
 }
 
 function visitTool(summaries: Map<string, NativeTurnChangeSummary>,
-  calls: Map<string, Set<string>>, tool: NativeMessage, finalizedTurn: boolean): void {
-  if (tool.role !== 'tool' || !mutationTool(tool) || !countableMutation(tool, finalizedTurn)) return;
+  calls: Map<string, Set<string>>, tool: NativeMessage): void {
+  if (tool.role !== 'tool' || !mutationTool(tool) || !countableMutation(tool)) return;
   const callKey = tool.callId || tool.id || tool.renderKey;
   if (callKey) {
     let seen = calls.get(tool.turnKey);
@@ -123,10 +137,11 @@ function visitTool(summaries: Map<string, NativeTurnChangeSummary>,
 }
 
 function visit(rows: NativeMessage[], summaries: Map<string, NativeTurnChangeSummary>,
-  calls: Map<string, Set<string>>, finalized: Set<string>, finalizedTurn: boolean): void {
+  calls: Map<string, Set<string>>): void {
   rows.forEach((row: NativeMessage): void => {
     if (row.role === 'process') {
-      visit(row.children || [], summaries, calls, finalized, finalizedTurn);
+      const children: NativeMessage[] = row.children || [];
+      visit(children, summaries, calls);
       return;
     }
     if (row.role === 'turn-footer') {
@@ -137,14 +152,7 @@ function visit(rows: NativeMessage[], summaries: Map<string, NativeTurnChangeSum
       }
       return;
     }
-    visitTool(summaries, calls, row, finalizedTurn || finalized.has(row.turnKey));
-  });
-}
-
-function finalTurns(rows: NativeMessage[], result: Set<string>): void {
-  rows.forEach((row: NativeMessage): void => {
-    if (row.role === 'process') finalTurns(row.children || [], result);
-    else if (row.role === 'turn-footer' && row.turnKey) result.add(row.turnKey);
+    visitTool(summaries, calls, row);
   });
 }
 
@@ -155,9 +163,7 @@ function finalTurns(rows: NativeMessage[], result: Set<string>): void {
 export function nativeTurnChanges(rows: NativeMessage[]): NativeTurnChangeSummary[] {
   const summaries: Map<string, NativeTurnChangeSummary> =
     new Map<string, NativeTurnChangeSummary>();
-  const finalized: Set<string> = new Set<string>();
-  finalTurns(rows || [], finalized);
-  visit(rows || [], summaries, new Map<string, Set<string>>(), finalized, false);
+  visit(rows || [], summaries, new Map<string, Set<string>>());
   const result: NativeTurnChangeSummary[] = [];
   summaries.forEach((summary: NativeTurnChangeSummary): void => {
     if (summary.files.length) result.push(summary);
@@ -180,6 +186,93 @@ export function nativeTurnChangeFor(rows: NativeTurnChangeSummary[],
   const found = rows.find((summary: NativeTurnChangeSummary): boolean =>
     summary.turnKey === turnKey);
   return found || null;
+}
+
+/** Latest durable `workspace/changes` announcement for each loaded turn. */
+export function nativeTurnChangeReferences(journal: string[]): NativeTurnChangeReference[] {
+  const byTurn: Map<string, NativeTurnChangeReference> = new Map<string, NativeTurnChangeReference>();
+  (journal || []).forEach((raw: string): void => {
+    if (!raw) return;
+    try {
+      const event = JSON.parse(raw) as Record<string, Object>;
+      const data = event.data as Record<string, Object>;
+      const seq = event.seq;
+      const turn = data?.turn;
+      if (event.type !== 'workspace/changes' || !Number.isSafeInteger(seq) ||
+          !Number.isSafeInteger(turn) || (turn as number) < 1) return;
+      const turnKey = 'turn:' + (turn as number);
+      const existing = byTurn.get(turnKey);
+      if (existing && existing.seq >= (seq as number)) return;
+      const reference = new NativeTurnChangeReference();
+      reference.turn = turn as number;
+      reference.seq = seq as number;
+      reference.turnKey = turnKey;
+      byTurn.set(turnKey, reference);
+    } catch (_) {}
+  });
+  const result: NativeTurnChangeReference[] = [];
+  byTurn.forEach((value: NativeTurnChangeReference): void => { result.push(value); });
+  return result.sort((left: NativeTurnChangeReference, right: NativeTurnChangeReference): number =>
+    left.seq - right.seq);
+}
+
+function nonNegativeInteger(value: Object): boolean {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+/**
+ * Validate the authenticated summary bridged from DSH's
+ * `/api/changes.summary`. The official response intentionally omits the Host
+ * cwd and snapshot identities; this parser also refuses unknown or oversized
+ * records rather than forwarding them into the transcript UI.
+ */
+export function nativeTurnChangeSummaryFromJson(value: string, turnKey: string,
+  outcome: string = ''): NativeTurnChangeSummary | null {
+  try {
+    const root = JSON.parse(value) as Record<string, Object>;
+    const filesValue = root.files;
+    const total = root.total;
+    const added = root.added;
+    const removed = root.deleted;
+    if (!Array.isArray(filesValue) || filesValue.length > 500 ||
+        !Number.isSafeInteger(total) || (total as number) < filesValue.length ||
+        (total as number) > 1000000 || !nonNegativeInteger(added) ||
+        !nonNegativeInteger(removed)) return null;
+    const files: NativeTurnFileChange[] = [];
+    for (let index = 0; index < filesValue.length; index++) {
+      const source = filesValue[index] as Record<string, Object>;
+      const path = source?.path;
+      const display = source?.display;
+      const fileAdded = source?.added;
+      const fileRemoved = source?.deleted;
+      const binary = source?.binary;
+      const oversized = source?.oversized;
+      if (typeof path !== 'string' || !path || path.length > 4096 ||
+          typeof display !== 'string' || !display || display.length > 8192 ||
+          !nonNegativeInteger(fileAdded) || !nonNegativeInteger(fileRemoved) ||
+          (binary !== undefined && binary !== true) ||
+          (oversized !== undefined && oversized !== true)) return null;
+      const file = new NativeTurnFileChange();
+      file.path = path;
+      file.display = display;
+      file.added = fileAdded as number;
+      file.removed = fileRemoved as number;
+      file.binary = binary === true;
+      file.oversized = oversized === true;
+      files.push(file);
+    }
+    const summary = new NativeTurnChangeSummary();
+    summary.turnKey = turnKey;
+    summary.files = files;
+    summary.fileCount = total as number;
+    summary.added = added as number;
+    summary.removed = removed as number;
+    summary.running = false;
+    summary.outcome = outcome;
+    return summary;
+  } catch (_) {
+    return null;
+  }
 }
 
 function signatureHash(value: string): string {

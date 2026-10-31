@@ -780,12 +780,11 @@ test('live turn file changes require an active unfinished turn and ignore malfor
   const live = turnChanges.nativeLiveTurnChange(rows, true);
   assert.ok(live);
   assert.equal(live.running, true);
-  assert.equal(live.fileCount, 2);
+  assert.equal(live.fileCount, 1, 'preparing mutations are intent, not confirmed changes');
   assert.equal(live.files[0].path, 'dir\\same.ts');
   assert.equal(live.files[0].added, 2);
   assert.equal(live.files[0].removed, 2);
-  assert.equal(live.files[1].path, 'dir/live.ts');
-  assert.equal(live.files[1].added, 1);
+  assert.equal(live.files.some(file => file.path === 'dir/live.ts'), false);
   assert.equal(turnChanges.nativeLiveTurnChange(rows, false), null);
   assert.equal(turnChanges.nativeTurnChanges([running, Object.assign(
     new types.NativeMessage(), {
@@ -808,6 +807,50 @@ test('live turn file changes require an active unfinished turn and ignore malfor
     baseSignature, 'streamed mutation arguments must invalidate the aggregate');
 });
 
+test('turn change references use durable event sequence and official summary totals', () => {
+  const types = load('NativeSessionModel', {});
+  const difference = load('NativeDiff', {});
+  const turnChanges = load('NativeTurnChanges', {
+    './NativeSessionModel': types,
+    './NativeDiff': difference
+  });
+  const journal = [
+    JSON.stringify({ seq: 8, type: 'workspace/changes', data: { turn: 2 } }),
+    JSON.stringify({ seq: 12, type: 'workspace/changes', data: { turn: 2 } }),
+    JSON.stringify({ seq: 13, type: 'workspace/changes', data: { turn: 9 } }),
+    JSON.stringify({ seq: 14, type: 'workspace/changes', data: { turn: 0 } }),
+    '{"seq":15,"type":"workspace/changes","data":',
+    JSON.stringify({ seq: 16, type: 'turn/end', data: { turn: 9 } })
+  ];
+  const references = turnChanges.nativeTurnChangeReferences(journal);
+  assert.deepEqual(Array.from(references, value => ({
+    turnKey: value.turnKey, turn: value.turn, seq: value.seq
+  })), [
+    { turnKey: 'turn:2', turn: 2, seq: 12 },
+    { turnKey: 'turn:9', turn: 9, seq: 13 }
+  ]);
+  const summary = turnChanges.nativeTurnChangeSummaryFromJson(JSON.stringify({
+    turn: 2, total: 4, added: 18, deleted: 7,
+    files: [
+      { path: 'src/a.ts', display: 'a.ts', added: 10, deleted: 4 },
+      { path: 'assets/icon.bin', display: 'icon.bin', added: 0, deleted: 0, binary: true },
+      { path: 'docs/large.md', display: 'large.md', added: 8, deleted: 3, oversized: true }
+    ]
+  }), 'turn:2', 'completed');
+  assert.ok(summary);
+  assert.equal(summary.fileCount, 4);
+  assert.equal(summary.files.length, 3);
+  assert.equal(summary.files[1].display, 'icon.bin');
+  assert.equal(summary.files[1].binary, true);
+  assert.equal(summary.files[2].oversized, true);
+  assert.equal(summary.outcome, 'completed');
+  assert.equal(turnChanges.nativeTurnChangeSummaryFromJson('{"total":1}', 'turn:2'), null);
+  assert.equal(turnChanges.nativeTurnChangeSummaryFromJson(JSON.stringify({
+    turn: 1, total: 1, added: 1, deleted: 0,
+    files: [{ path: 'a', display: 'a', added: 1, deleted: 0, binary: false }]
+  }), 'turn:1'), null);
+});
+
 test('turn change card and bottom live control keep compact ownership and motion contracts', () => {
   const view = readFileSync(new URL(
     '../../harmony/entry/src/main/ets/components/NativeTurnChangesView.ets',
@@ -820,7 +863,7 @@ test('turn change card and bottom live control keep compact ownership and motion
     import.meta.url), 'utf8');
   assert.match(view, /已编辑 ' \+ this\.summary\.fileCount \+ ' 个文件/);
   assert.match(view, /this\.summary\.files\.slice\(0, 3\)/);
-  assert.match(view, /再显示 ' \+ \(this\.summary\.fileCount - 3\) \+ ' 个文件/);
+  assert.match(view, /再显示 ' \+ \(this\.summary\.files\.length - 3\) \+ ' 个文件/);
   assert.match(view, /onOpenFile: \(path: string\) => void/);
   assert.match(view, /duration: 170/);
   assert.match(view, /translate\(\{ y: -7 \* this\.progress \}\)/);
@@ -829,6 +872,9 @@ test('turn change card and bottom live control keep compact ownership and motion
   assert.match(workspace, /NativeTurnChangesCard\(\{[\s\S]{0,500}onOpenFile:[\s\S]{0,180}this\.openTurnChangeFile/);
   assert.match(workspace, /NativeTurnChangePill\(\{[\s\S]{0,180}liveTurnChanges/);
   assert.match(workspace, /nativeLiveTurnChange\(rows,[\s\S]{0,180}model\.running/);
+  assert.match(workspace, /Activity can change without a tool\/footer signature change[\s\S]{0,420}liveTurnChangesVisible = false/);
+  assert.match(workspace, /nativeTurnChangeSummaryFromJson/);
+  assert.match(workspace, /officialTurnChangeSequences\.get\(reference\.turnKey\)/);
   assert.match(workspace, /NativeBottomConversationDock\(\{[\s\S]{0,260}horizontalBleed: 12/);
   assert.doesNotMatch(workspace, /bottomDockContentHeight|bottomDockOverlayInset|translate\(\{ y: -\(this\.bottomDock/);
   assert.match(workspace, /if \(this\.liveTurnChangesVisible\)[\s\S]{0,360}NativeTurnChangePill/);
