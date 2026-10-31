@@ -200,22 +200,62 @@ export function nativeDiff(tool: NativeMessage): NativeDiffDocument {
   } catch (_) {}
   const fallbackPath = typeof args['file_path'] === 'string' ? args['file_path'] as string :
     typeof args['path'] === 'string' ? args['path'] as string : '';
-  if (args['diffs'] !== undefined) {
-    const result = explicitDiffs(args['diffs'], fallbackPath);
+  const settled = tool.phase === 'result' || tool.status === 'success';
+  if (settled && meta['diffs'] !== undefined) {
+    const result = explicitDiffs(meta['diffs'], fallbackPath);
     if (result.matched) return result;
   }
-  if (meta['diffs'] !== undefined) {
-    const result = explicitDiffs(meta['diffs'], fallbackPath);
+  if (args['diffs'] !== undefined) {
+    const result = explicitDiffs(args['diffs'], fallbackPath);
     if (result.matched) return result;
   }
   for (const field of ['patch', 'diff']) {
     const value = args[field];
     if (typeof value === 'string' && value.trim()) return parsePatch(value, fallbackPath);
   }
+  if (tool.toolName === 'write') {
+    const content = args['content'];
+    if (fallbackPath && typeof content === 'string') {
+      return lineDocument('', content, fallbackPath);
+    }
+  }
+  if (tool.toolName === 'edit') {
+    const oldString = args['old_string'];
+    const newString = args['new_string'];
+    if (fallbackPath && typeof oldString === 'string' && typeof newString === 'string') {
+      return lineDocument(oldString, newString, fallbackPath);
+    }
+  }
+  if (tool.toolName === 'str_replace_editor') {
+    const command = args['command'];
+    if (fallbackPath && command === 'create') {
+      const fileText = args['file_text'];
+      if (fileText === undefined || typeof fileText === 'string') {
+        return lineDocument('', typeof fileText === 'string' ? fileText : '', fallbackPath);
+      }
+    }
+    if (fallbackPath && command === 'str_replace') {
+      const oldString = args['old_str'];
+      const newString = args['new_str'];
+      if ((oldString === undefined || typeof oldString === 'string') &&
+          (newString === undefined || typeof newString === 'string')) {
+        return lineDocument(typeof oldString === 'string' ? oldString : '',
+          typeof newString === 'string' ? newString : '', fallbackPath);
+      }
+    }
+  }
   const oldText = args['oldText'];
   const newText = args['newText'];
   if ((oldText === null || typeof oldText === 'string') && typeof newText === 'string') {
     return lineDocument(typeof oldText === 'string' ? oldText : '', newText as string, fallbackPath);
+  }
+  if (tool.toolName === 'apply_patch' && tool.args.trim().startsWith('*** Begin Patch')) {
+    return parsePatch(tool.args, fallbackPath);
+  }
+  const explicitPatch = args['input'];
+  if (tool.toolName === 'apply_patch' && typeof explicitPatch === 'string' &&
+      explicitPatch.trim().startsWith('*** Begin Patch')) {
+    return parsePatch(explicitPatch, fallbackPath);
   }
   const metadataDiff = meta['diff'];
   if (typeof metadataDiff === 'string' && metadataDiff.trim()) return parsePatch(metadataDiff, fallbackPath);

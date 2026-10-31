@@ -636,6 +636,54 @@ test('native diff renders only explicit or applied edits and honors null old tex
   assert.equal(nativeDiff(message({ output: 'old\n+new' })).matched, false);
 });
 
+test('native diff understands current write, edit and str_replace_editor arguments', () => {
+  const { nativeDiff } = load('NativeDiff', {});
+  const message = fields => Object.assign({
+    args: '', metaRaw: '', output: '', error: '', failed: false, status: '', outcome: '',
+    phase: '', toolName: ''
+  }, fields);
+
+  const write = nativeDiff(message({
+    toolName: 'write', phase: 'preparing', status: 'preparing',
+    args: JSON.stringify({ file_path: 'src/new.ts', content: 'one\ntwo\n' })
+  }));
+  assert.equal(write.matched, true);
+  assert.equal(write.path, 'src/new.ts');
+  assert.equal(write.added, 2);
+  assert.equal(write.removed, 0);
+
+  const edit = nativeDiff(message({
+    toolName: 'edit', phase: 'start', status: 'running',
+    args: JSON.stringify({ file_path: 'src/edit.ts', old_string: 'before', new_string: 'after' })
+  }));
+  assert.equal(edit.matched, true);
+  assert.equal(edit.added, 1);
+  assert.equal(edit.removed, 1);
+
+  const create = nativeDiff(message({
+    toolName: 'str_replace_editor', phase: 'start', status: 'running',
+    args: JSON.stringify({ command: 'create', path: 'src/create.ts', file_text: 'created' })
+  }));
+  assert.equal(create.matched, true);
+  assert.equal(create.added, 1);
+
+  const replace = nativeDiff(message({
+    toolName: 'str_replace_editor', phase: 'start', status: 'running',
+    args: JSON.stringify({ command: 'str_replace', path: 'src/replace.ts', old_str: 'a', new_str: 'b' })
+  }));
+  assert.equal(replace.matched, true);
+  assert.equal(replace.added, 1);
+  assert.equal(replace.removed, 1);
+
+  const applied = nativeDiff(message({
+    toolName: 'write', phase: 'result', status: 'success',
+    args: JSON.stringify({ file_path: 'src/new.ts', content: 'all-new\ncontent\n' }),
+    metaRaw: JSON.stringify({ diffs: [{ path: 'src/new.ts', oldText: 'old', newText: 'all-new\n' }] })
+  }));
+  assert.equal(applied.added, 1);
+  assert.equal(applied.removed, 1, 'settled metadata overrides the provisional whole-file write');
+});
+
 test('turn file changes aggregate only settled explicit mutations by stable path', () => {
   const types = load('NativeSessionModel', {});
   const difference = load('NativeDiff', {});
@@ -712,6 +760,12 @@ test('live turn file changes require an active unfinished turn and ignore malfor
     ] }),
     metaRaw: '', output: '', error: '', failed: false, outcome: ''
   });
+  const preparingTool = Object.assign(new types.NativeMessage(), {
+    id: 'call-preparing', callId: 'call-preparing', role: 'tool', turnKey: 'turn:2',
+    toolName: 'write', phase: 'preparing', status: 'preparing',
+    args: JSON.stringify({ file_path: 'dir/live.ts', content: 'live\n' }),
+    metaRaw: '', output: '', error: '', failed: false, outcome: ''
+  });
   const denied = Object.assign(new types.NativeMessage(), {
     id: 'call-denied', callId: 'call-denied', role: 'tool', turnKey: 'turn:2',
     toolName: 'apply_patch', phase: 'result', status: 'success',
@@ -720,16 +774,18 @@ test('live turn file changes require an active unfinished turn and ignore malfor
   });
   const running = Object.assign(new types.NativeMessage(), {
     id: 'process-live', role: 'process', turnKey: 'turn:2',
-    children: [runningTool, denied]
+    children: [runningTool, preparingTool, denied]
   });
   const rows = [running];
   const live = turnChanges.nativeLiveTurnChange(rows, true);
   assert.ok(live);
   assert.equal(live.running, true);
-  assert.equal(live.fileCount, 1);
+  assert.equal(live.fileCount, 2);
   assert.equal(live.files[0].path, 'dir\\same.ts');
   assert.equal(live.files[0].added, 2);
   assert.equal(live.files[0].removed, 2);
+  assert.equal(live.files[1].path, 'dir/live.ts');
+  assert.equal(live.files[1].added, 1);
   assert.equal(turnChanges.nativeLiveTurnChange(rows, false), null);
   assert.equal(turnChanges.nativeTurnChanges([running, Object.assign(
     new types.NativeMessage(), {

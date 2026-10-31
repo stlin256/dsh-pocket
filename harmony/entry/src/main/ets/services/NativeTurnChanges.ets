@@ -18,11 +18,16 @@ export class NativeTurnChangeSummary {
 }
 
 function mutationTool(tool: NativeMessage): boolean {
-  return tool.toolName === 'write' || tool.toolName === 'edit' || tool.toolName === 'apply_patch';
+  return tool.toolName === 'write' || tool.toolName === 'edit' ||
+    tool.toolName === 'str_replace_editor' || tool.toolName === 'apply_patch';
 }
 
-function settledSuccess(tool: NativeMessage): boolean {
-  if (tool.phase !== 'result' && tool.status !== 'success') return false;
+function countableMutation(tool: NativeMessage, finalizedTurn: boolean): boolean {
+  const settled = tool.phase === 'result' || tool.status === 'success';
+  const active = tool.phase === 'preparing' || tool.phase === 'start' ||
+    tool.status === 'preparing' || tool.status === 'running';
+  if (!settled && !active) return false;
+  if (!settled && finalizedTurn) return false;
   if (tool.failed || tool.status === 'error' || tool.status === 'interrupted') return false;
   if (tool.outcome === 'failed' || tool.outcome === 'error' ||
       tool.outcome === 'interrupted' || tool.outcome === 'cancelled') return false;
@@ -92,8 +97,8 @@ function addSummaryFile(summary: NativeTurnChangeSummary, key: string,
 }
 
 function visitTool(summaries: Map<string, NativeTurnChangeSummary>,
-  calls: Map<string, Set<string>>, tool: NativeMessage): void {
-  if (tool.role !== 'tool' || !mutationTool(tool) || !settledSuccess(tool)) return;
+  calls: Map<string, Set<string>>, tool: NativeMessage, finalizedTurn: boolean): void {
+  if (tool.role !== 'tool' || !mutationTool(tool) || !countableMutation(tool, finalizedTurn)) return;
   const callKey = tool.callId || tool.id || tool.renderKey;
   if (callKey) {
     let seen = calls.get(tool.turnKey);
@@ -118,10 +123,10 @@ function visitTool(summaries: Map<string, NativeTurnChangeSummary>,
 }
 
 function visit(rows: NativeMessage[], summaries: Map<string, NativeTurnChangeSummary>,
-  calls: Map<string, Set<string>>): void {
+  calls: Map<string, Set<string>>, finalized: Set<string>, finalizedTurn: boolean): void {
   rows.forEach((row: NativeMessage): void => {
     if (row.role === 'process') {
-      visit(row.children || [], summaries, calls);
+      visit(row.children || [], summaries, calls, finalized, finalizedTurn);
       return;
     }
     if (row.role === 'turn-footer') {
@@ -132,7 +137,14 @@ function visit(rows: NativeMessage[], summaries: Map<string, NativeTurnChangeSum
       }
       return;
     }
-    visitTool(summaries, calls, row);
+    visitTool(summaries, calls, row, finalizedTurn || finalized.has(row.turnKey));
+  });
+}
+
+function finalTurns(rows: NativeMessage[], result: Set<string>): void {
+  rows.forEach((row: NativeMessage): void => {
+    if (row.role === 'process') finalTurns(row.children || [], result);
+    else if (row.role === 'turn-footer' && row.turnKey) result.add(row.turnKey);
   });
 }
 
@@ -143,7 +155,9 @@ function visit(rows: NativeMessage[], summaries: Map<string, NativeTurnChangeSum
 export function nativeTurnChanges(rows: NativeMessage[]): NativeTurnChangeSummary[] {
   const summaries: Map<string, NativeTurnChangeSummary> =
     new Map<string, NativeTurnChangeSummary>();
-  visit(rows || [], summaries, new Map<string, Set<string>>());
+  const finalized: Set<string> = new Set<string>();
+  finalTurns(rows || [], finalized);
+  visit(rows || [], summaries, new Map<string, Set<string>>(), finalized, false);
   const result: NativeTurnChangeSummary[] = [];
   summaries.forEach((summary: NativeTurnChangeSummary): void => {
     if (summary.files.length) result.push(summary);
