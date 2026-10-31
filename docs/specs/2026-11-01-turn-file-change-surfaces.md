@@ -15,8 +15,11 @@ Add a pure ArkTS projection in `NativeTurnChanges.ets`:
 ```ts
 class NativeTurnFileChange {
   path: string
+  display: string
   added: number
   removed: number
+  binary: boolean
+  oversized: boolean
 }
 
 class NativeTurnChangeSummary {
