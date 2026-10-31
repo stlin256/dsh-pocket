@@ -6,6 +6,7 @@ import { NativeFrame, NativeSession, NativeSessionList, NativeSessionModel, Nati
 import { NativeHostSettings } from './NativeHostSettings';
 import { NativeModelDirectory } from './NativeModelDirectory';
 import { nativeFileWindowMetadata } from './NativeFileWindow';
+import { nativeResolvedWorkspaceTarget, NativeWorkspaceTarget } from './NativeWorkspaceTarget';
 
 export class NativeHttpError extends Error {
   status: number;
@@ -263,6 +264,26 @@ export class NativeHarnessClient {
   async listFiles(id: string, path: string): Promise<NativeDirectoryListing> {
     return JSON.parse(await this.request('/pocket/api/native/file/list', http.RequestMethod.POST,
       JSON.stringify({ sessionId: id, path: path }))) as NativeDirectoryListing;
+  }
+  /**
+   * Confirm a chat link before any root preview/browser surface is published.
+   * File and directory probes overlap so the common path pays one probe latency.
+   */
+  async resolveWorkspaceTarget(id: string, path: string, basename: string = ''): Promise<NativeWorkspaceTarget> {
+    let hasFile = false;
+    let hasDirectory = false;
+    const fileProbe: Promise<void> = this.statFile(id, path)
+      .then((): void => { hasFile = true; })
+      .catch((): void => {});
+    const directoryProbe: Promise<void> = this.listFiles(id, path)
+      .then((): void => { hasDirectory = true; })
+      .catch((): void => {});
+    await fileProbe;
+    if (!hasFile) await directoryProbe;
+    const exact = nativeResolvedWorkspaceTarget(path, hasFile, hasDirectory);
+    if (exact.kind || !basename) return exact;
+    const fallback = await this.findWorkspaceFile(id, basename);
+    return nativeResolvedWorkspaceTarget(path, false, false, fallback);
   }
   /**
    * Resolve a model-emitted basename that was written to a nested directory.

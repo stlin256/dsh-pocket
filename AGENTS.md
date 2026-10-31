@@ -143,6 +143,12 @@ or real transcript content in source, tests, docs, logs or commits.
   [2026-10-31-plan-expand-file-open-latency.md](docs/specs/2026-10-31-plan-expand-file-open-latency.md)
 - Plan expansion stability and immediate file preview E2E:
   [2026-10-31-plan-expand-file-open-latency-e2e.md](docs/testing/2026-10-31-plan-expand-file-open-latency-e2e.md)
+- Chat link existence requirement:
+  [2026-10-31-chat-link-existence.md](docs/requirements/2026-10-31-chat-link-existence.md)
+- Chat link existence implementation spec:
+  [2026-10-31-chat-link-existence.md](docs/specs/2026-10-31-chat-link-existence.md)
+- Chat link existence device E2E:
+  [2026-10-31-chat-link-existence-e2e.md](docs/testing/2026-10-31-chat-link-existence-e2e.md)
 - Structured plan update and floating task list requirement:
   [2026-10-31-structured-plan-update.md](docs/requirements/2026-10-31-structured-plan-update.md)
 - Structured plan update and floating task list implementation spec:

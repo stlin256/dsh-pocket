@@ -29,25 +29,22 @@ patch source. `NativeDiff` also rejects null parsed roots and null array entries
 so malformed optional metadata cannot terminate the app. Plan arguments and
 output use the existing read-only text and rich-content renderers.
 
-## Immediate Preview Shell
+## Target Existence Preflight
 
-Clicking a local Markdown link follows this order:
+The later
+[chat link existence specification](2026-10-31-chat-link-existence.md)
+supersedes the immediate-shell behavior in this section. A local link resolves
+its relative path first, then confirms whether it is a regular file or a
+directory. Only a confirmed target publishes a `NativeFileViewRequest`.
+Independent file and directory probes overlap, and the bounded basename lookup
+runs only after both exact probes fail.
 
-1. Resolve only the lightweight relative target string.
-2. Publish a `NativeFileViewRequest` with a unique `requestId`.
-3. `NativeWorkspace` opens `NativeFilePreview` immediately.
-4. Start background validation and file loading.
+A missing or unavailable target keeps chat visible and shows one concise
+failure toast. A valid unsupported binary remains a confirmed file and may open
+the preview surface with its download-only state.
 
-The background validator calls `statFile` after the shell has mounted. If the
-exact file is valid, no navigation change is needed. If the exact path fails,
-the validator may resolve a unique basename through the existing bounded
-workspace search. If the target is a directory, listing succeeds and the same
-request is replaced by a browser request.
-
-Late results may publish only while the current AppStorage payload still has
-the same `requestId`. Closing the overlay clears that payload, so a pending
-stat, search or list response cannot reopen it. Opening another link assigns a
-new request id and invalidates the older resolution.
+Late results may publish only while the request id remains active. Closing or
+superseding the request prevents an old probe from opening an overlay.
 
 ## Preview Loading
 
@@ -80,16 +77,16 @@ mode switch continues to share the same mode control and read-only contract.
 
 - Invalid file content produces the existing in-surface error and retry action.
 - A directory switches to the file browser once detection completes.
-- An unavailable path keeps the immediate shell until loading fails, then shows
-  a concise error; it is never represented as an endless spinner.
+- An unavailable path never mounts a preview shell and shows a concise
+  chat-level error.
 - A closed or superseded request never mutates the active overlay.
 
 ## Verification
 
 - Transcript model tests assert that repeated child IDs receive unique stable
   render keys and that later streaming appends preserve earlier keys.
-- Source-contract tests assert that the request is published before `statFile`
-  and that preview content no longer awaits `statFile`.
+- Source-contract tests assert that the request is published only after file or
+  directory confirmation and that preview content no longer awaits `statFile`.
 - Device tests expand a completed plan repeatedly, open file and folder links,
   cold-start and open multiple images without tapping retry, close while
   resolving and verify no stale overlay reopens.

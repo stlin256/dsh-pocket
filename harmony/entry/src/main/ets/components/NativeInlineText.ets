@@ -1,9 +1,9 @@
 import { common } from '@kit.AbilityKit';
 import { nativeInlineMarkdown, NativeInlineRun } from '../services/NativeInlineMarkdown';
 import { NativeHarnessClient } from '../services/NativeHarnessClient';
-import { NativeDirectoryListing, NativeFileStat } from '../services/NativeHarnessClient';
 import { nativeBareFileName, nativeFileTarget, nativeLinkKind } from '../services/NativeLinkResolver';
 import { NativeFileViewRequest } from '../services/NativeSessionModel';
+import { NativeWorkspaceTarget } from '../services/NativeWorkspaceTarget';
 import { DSHIcon } from './DSHIcon';
 import { NativeExperience } from '../services/NativeExperience';
 
@@ -30,8 +30,17 @@ export struct NativeInlineText {
   private lastOpenHref: string = '';
   private lastOpenAt: number = 0;
   private fileRequestSequence: number = 0;
+  private mounted: boolean = false;
+  private pendingFileRequest: string = '';
 
-  aboutToAppear(): void { this.changed(); }
+  aboutToAppear(): void { this.mounted = true; this.changed(); }
+  aboutToDisappear(): void {
+    this.mounted = false;
+    if (this.pendingFileRequest &&
+      AppStorage.get<string>('nativeFileViewPendingRequest') === this.pendingFileRequest) {
+      AppStorage.setOrCreate<string>('nativeFileViewPendingRequest', '');
+    }
+  }
   private changed(): void { this.runs = nativeInlineMarkdown(this.text); }
   private runColor(run: NativeInlineRun): ResourceColor {
     if (run.href) return this.dark ? '#8AB4FF' : '#3964FE';
@@ -58,7 +67,7 @@ export struct NativeInlineText {
         const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
         await context.startAbility({ action: 'ohos.want.action.viewData', uri: run.href });
       } else {
-        this.openFile(run.href);
+        await this.openFile(run.href);
       }
     } catch (_) {
       this.getUIContext().getPromptAction().showToast({ message: '无法打开此链接', duration: 1500 });
@@ -69,7 +78,10 @@ export struct NativeInlineText {
   }
   private fileRequestId(): string {
     this.fileRequestSequence++;
-    return Date.now().toString(36) + ':' + this.fileRequestSequence;
+    const requestId = Date.now().toString(36) + ':' + this.fileRequestSequence;
+    this.pendingFileRequest = requestId;
+    AppStorage.setOrCreate<string>('nativeFileViewPendingRequest', requestId);
+    return requestId;
   }
   private openFileView(kind: string, path: string, requestId: string): void {
     const request = new NativeFileViewRequest();
@@ -77,11 +89,15 @@ export struct NativeInlineText {
     request.sessionId = this.sessionId;
     request.path = path;
     request.requestId = requestId;
+    this.pendingFileRequest = '';
+    AppStorage.setOrCreate<string>('nativeFileViewPendingRequest', '');
     AppStorage.setOrCreate<string>('nativeFileViewPayload', JSON.stringify(request));
     AppStorage.setOrCreate<number>('nativeFileViewRevision',
       (AppStorage.get<number>('nativeFileViewRevision') || 0) + 1);
   }
   private fileRequestActive(requestId: string): boolean {
+    if (!this.mounted) return false;
+    if (AppStorage.get<string>('nativeFileViewPendingRequest') === requestId) return true;
     try {
       const raw = AppStorage.get<string>('nativeFileViewPayload') || '';
       if (!raw) return false;
@@ -91,7 +107,13 @@ export struct NativeInlineText {
       return false;
     }
   }
-  private openFile(href: string): void {
+  private unavailableFile(requestId: string): void {
+    if (!this.fileRequestActive(requestId)) return;
+    this.pendingFileRequest = '';
+    AppStorage.setOrCreate<string>('nativeFileViewPendingRequest', '');
+    this.getUIContext().getPromptAction().showToast({ message: '文件或文件夹不可用', duration: 1500 });
+  }
+  private async openFile(href: string): Promise<void> {
     if (!this.sessionId) {
       this.getUIContext().getPromptAction().showToast({ message: '请先在会话中打开此链接', duration: 1500 });
       return;
@@ -99,32 +121,17 @@ export struct NativeInlineText {
     const path = this.fileTarget(href);
     if (!path) return;
     const requestId = this.fileRequestId();
-    // Mount the reader before network validation so a slow stat or directory
-    // search never looks like an ignored tap.
-    this.openFileView('file', path, requestId);
-    this.resolveFile(path, requestId);
-  }
-  private async resolveFile(path: string, requestId: string): Promise<void> {
     try {
-      const stat: NativeFileStat = await this.client.statFile(this.sessionId, path);
-      if (stat.version) return;
-    } catch (_) {
-      // The immediate file shell remains responsible for the final error.
-    }
-    if (!this.fileRequestActive(requestId)) return;
-    const basename = nativeBareFileName(path);
-    if (basename) {
-      const resolved = await this.client.findWorkspaceFile(this.sessionId, basename);
-      if (resolved && this.fileRequestActive(requestId)) {
-        this.openFileView('file', resolved, requestId);
+      const target: NativeWorkspaceTarget = await this.client.resolveWorkspaceTarget(
+        this.sessionId, path, nativeBareFileName(href));
+      if (!this.fileRequestActive(requestId)) return;
+      if (!target.kind || !target.path) {
+        this.unavailableFile(requestId);
         return;
       }
-    }
-    try {
-      const listing: NativeDirectoryListing = await this.client.listFiles(this.sessionId, path);
-      if (listing && this.fileRequestActive(requestId)) this.openFileView('browser', path, requestId);
+      this.openFileView(target.kind, target.path, requestId);
     } catch (_) {
-      // The mounted preview displays the concise unavailable-file state.
+      this.unavailableFile(requestId);
     }
   }
   @Builder
