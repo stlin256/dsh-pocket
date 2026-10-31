@@ -1439,8 +1439,8 @@ export struct NativeWorkspace {
   }
   private paint(): void {
     if (!this.mounted) return;
-    this.renderTranscript();
     this.running = this.model.running; this.waiting = this.model.waiting; this.hasMore = this.model.hasMore;
+    this.renderTranscript();
     if (this.followTail && !this.returningToBottom) {
       setTimeout(() => {
         if (this.mounted && this.followTail && !this.returningToBottom) this.scroller.scrollEdge(Edge.Bottom);
@@ -1555,8 +1555,7 @@ export struct NativeWorkspace {
     // Activity can change without a tool/footer signature change. Resolve
     // visibility on every projection so a completed/stopped turn hides the
     // live pill immediately and never leaks into the next state.
-    const live = nativeLiveTurnChange(rows,
-      this.model.running || this.model.waiting || this.running || this.waiting);
+    const live = nativeLiveTurnChange(rows, this.model.running || this.model.waiting);
     if (live) {
       if (!this.liveTurnChangesVisible) {
         NativeMotion.animate(this.getUIContext(), 'micro', (): void => {

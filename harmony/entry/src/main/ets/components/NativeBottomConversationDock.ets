@@ -19,7 +19,10 @@ export struct NativeBottomConversationDock {
     Stack({ alignContent: Alignment.Bottom }) {
       if (this.elevated && NativeExperience.materialsEnabled()) {
         Column()
-          .width('100%').height('100%')
+          // A percentage-sized child makes this unconstrained Stack expand to
+          // the remaining page height. Follow the natural content measurement
+          // so the composer keeps ownership of its intrinsic bottom height.
+          .width('100%').height(this.measuredHeight)
           .backgroundBlurStyle(BlurStyle.Thin)
           .linearGradientBlur(18, {
             fractionStops: [[0, 0], [0.28, 0.12], [1, 1]],
