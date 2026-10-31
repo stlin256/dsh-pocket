@@ -62,4 +62,7 @@ Date: 2026-11-01
   navigation history; external HTTP(S) links open outside the app.
 - `PREVIEW-06` Every PDF/HTML preview retains the shared top download action and
   the workspace remains strictly read-only.
+- `SCROLL-04` The return-to-latest control is a compact 34vp neutral circular
+  surface with 60% opacity at rest and 85% while interacting. It uses no
+  colored halo.
 

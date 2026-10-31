@@ -158,6 +158,7 @@ export struct NativeWorkspace {
   @State private dropWorkspaceAfter: boolean = false;
   @State private backToBottomVisible: boolean = false;
   @State private backToBottomNew: boolean = false;
+  @State private backToBottomPressed: boolean = false;
   @State private drawerFollowing: boolean = false;
   @State private drawerTranslation: number = 0;
   @State private transcriptViewportHeight: number = 0;
@@ -2081,28 +2082,26 @@ export struct NativeWorkspace {
           !this.showSessions) {
           Stack({ alignContent: Alignment.Bottom }) {
             Stack({ alignContent: Alignment.Center }) {
-              Stack().width(52).height(52).borderRadius(26)
-                .backgroundColor(this.dark ? '#7A8AB4FF' : '#663964FE')
-                .blur(NativeExperience.reducedTransparency() ? 0 : 14)
-              Button({ type: ButtonType.Normal }) {
-                Stack({ alignContent: Alignment.Center }) {
-                  DSHIcon({ glyph: 'chevron-down-outline', glyphSize: 17,
-                    color: this.dark ? '#F9FAFB' : '#17181B' })
-                  if (this.backToBottomNew) {
-                    Text('').position({ x: 15, y: -15 }).width(6).height(6).borderRadius(6)
-                      .backgroundColor(this.dark ? '#8AB4FF' : '#3964FE')
-                  }
-                }.width('100%').height('100%')
-              }.width(40).height(40).padding(0).borderRadius(20).clip(true)
-                .backgroundColor(NativeExperience.reducedTransparency() ?
-                  this.dark ? '#2C2C2E' : '#FFFFFF' :
-                  this.dark ? '#D92C2C2E' : '#E6FFFFFF')
-                .border({ width: 0.8, color: this.dark ? '#805A5D63' : '#B8C9CDD5' })
-                .shadow({ radius: 8, color: this.dark ? '#55000000' : '#1C000000', offsetY: 2 })
-                .accessibilityText(this.backToBottomNew ? '回到底部，有新内容' : '回到底部')
-                .onClick((): void => { this.returnToBottom(); })
-            }.width(66).height(58)
-              .margin({ bottom: 3 })
+              DSHIcon({ glyph: 'chevron-down-outline', glyphSize: 17,
+                color: this.dark ? '#F9FAFB' : '#17181B' })
+              if (this.backToBottomNew) {
+                Text('').position({ x: 12, y: -12 }).width(6).height(6).borderRadius(6)
+                  .backgroundColor(this.dark ? '#8AB4FF' : '#3964FE')
+              }
+            }.width(34).height(34).borderRadius(17).clip(true)
+              .backgroundColor(this.dark ? '#202124' : '#FFFFFF')
+              .opacity(this.backToBottomPressed ? 0.85 : 0.6)
+              .border({ width: 0.7, color: this.dark ? '#6B6E73' : '#C8CCD2' })
+              .shadow({ radius: 12, color: this.dark ? '#40000000' : '#26000000', offsetY: 2 })
+              .accessibilityText(this.backToBottomNew ? '回到底部，有新内容' : '回到底部')
+              .onTouch((event: TouchEvent): void => {
+                this.backToBottomPressed = event.type === TouchType.Down;
+              })
+              .onClick((): void => {
+                this.backToBottomPressed = false;
+                this.returnToBottom();
+              })
+              .margin({ bottom: 4 })
               .transition(NativeMotion.rowTransition())
           }.width('100%').height('100%')
             .hitTestBehavior(HitTestMode.Transparent).zIndex(6)

@@ -757,8 +757,10 @@ test('todo_write projects structured status rows and the newest replacement plan
   assert.match(workspaceView,/contentStartOffset\(this\.taskPlan\.items\.length \? this\.conversationDockHeight : 0\)/);
   assert.match(workspaceView,/NativeConversationDock\(\) \{[\s\S]{0,260}\.onAreaChange/);
   assert.match(workspaceView,/glyph: 'chevron-down-outline'/);
-  assert.match(workspaceView,/\.blur\(NativeExperience\.reducedTransparency\(\) \? 0 : 14\)/);
-  assert.match(workspaceView,/\.width\(40\)\.height\(40\)[\s\S]{0,300}#E6FFFFFF/);
+  assert.match(workspaceView,/\.width\(34\)\.height\(34\)\.borderRadius\(17\)/);
+  assert.match(workspaceView,/\.opacity\(this\.backToBottomPressed \? 0\.85 : 0\.6\)/);
+  assert.match(workspaceView,/TouchType\.Down/);
+  assert.doesNotMatch(workspaceView,/7A8AB4FF|663964FE/);
   assert.match(workspaceView,/hitTestBehavior\(HitTestMode\.Transparent\)\.zIndex\(6\)/);
   const dockGroup=readFileSync(new URL(
     '../../harmony/entry/src/main/ets/components/NativeConversationDock.ets', import.meta.url),'utf8');
