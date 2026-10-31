@@ -876,7 +876,9 @@ test('turn change card and bottom live control keep compact ownership and motion
   assert.match(workspace, /NativeTurnChangesCard\(\{[\s\S]{0,500}onOpenFile:[\s\S]{0,180}this\.openTurnChangeFile/);
   assert.match(workspace, /NativeTurnChangePill\(\{[\s\S]{0,180}liveTurnChanges/);
   assert.match(workspace, /nativeLiveTurnChange\(rows,[\s\S]{0,180}model\.running/);
-  assert.match(workspace, /Activity can change without a tool\/footer signature change[\s\S]{0,420}liveTurnChangesVisible = false/);
+  assert.match(workspace, /Activity can change without a tool\/footer signature change[\s\S]{0,900}liveTurnChangesVisible = false/);
+  assert.match(workspace, /NativeMotion\.animate\(this\.getUIContext\(\), 'micro'[\s\S]{0,180}liveTurnChangesVisible = true/);
+  assert.match(workspace, /NativeMotion\.animate\(this\.getUIContext\(\), 'micro'[\s\S]{0,180}liveTurnChangesVisible = false/);
   assert.match(workspace, /nativeTurnChangeSummaryFromJson/);
   assert.match(workspace, /officialTurnChangeSequences\.get\(reference\.turnKey\)/);
   assert.match(workspace, /NativeBottomConversationDock\(\{[\s\S]{0,260}horizontalBleed: 12/);

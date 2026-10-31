@@ -1456,6 +1456,7 @@ export struct NativeWorkspace {
             this.officialTurnChangeRequests.delete(key);
             return;
           }
+          this.officialTurnChangeRequests.delete(key);
           this.officialTurnChanges = this.officialTurnChanges.filter((item: NativeTurnChangeSummary): boolean =>
             item.turnKey !== reference.turnKey).concat([summary]);
           this.paint();
@@ -1487,10 +1488,18 @@ export struct NativeWorkspace {
     const live = nativeLiveTurnChange(rows,
       this.model.running || this.model.waiting || this.running || this.waiting);
     if (live) {
-      this.liveTurnChanges = live;
-      this.liveTurnChangesVisible = true;
-    } else {
-      this.liveTurnChangesVisible = false;
+      if (!this.liveTurnChangesVisible) {
+        NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
+          this.liveTurnChanges = live;
+          this.liveTurnChangesVisible = true;
+        });
+      } else {
+        this.liveTurnChanges = live;
+      }
+    } else if (this.liveTurnChangesVisible) {
+      NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
+        this.liveTurnChangesVisible = false;
+      });
     }
     const plan = nativeLatestPlan(rows);
     const planSignature = nativePlanSignature(plan);
