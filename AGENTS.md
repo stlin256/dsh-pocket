@@ -224,6 +224,12 @@ or real transcript content in source, tests, docs, logs or commits.
   [2026-11-01-live-process-title-streaming.md](docs/specs/2026-11-01-live-process-title-streaming.md)
 - Live process, title and streaming device E2E:
   [2026-11-01-live-process-title-streaming-e2e.md](docs/testing/2026-11-01-live-process-title-streaming-e2e.md)
+- Device UI mock and bottom dock requirement:
+  [2026-11-01-device-ui-mock-e2e.md](docs/requirements/2026-11-01-device-ui-mock-e2e.md)
+- Device UI mock and bottom dock implementation spec:
+  [2026-11-01-device-ui-mock-e2e.md](docs/specs/2026-11-01-device-ui-mock-e2e.md)
+- Device UI mock and bottom dock E2E:
+  [2026-11-01-device-ui-mock-e2e.md](docs/testing/2026-11-01-device-ui-mock-e2e.md)
 
 ## Upstream Tracking
 

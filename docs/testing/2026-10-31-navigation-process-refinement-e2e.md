@@ -25,7 +25,7 @@ wait for a fresh full regression.
 | FILE-03 | Open markdown, image, text and directory references | Each opens its native preview or browser; unsupported content shows one short error | Pending |
 | FILE-04 | Tap a valid file or directory reference from a transcript row | A root-level reader/browser appears on the first tap with no silent success path | Pending |
 | FILE-05 | Press system Back from a chat-opened file reader or browser | The root-level preview closes before chat navigation or exit confirmation | Pending |
-| SET-02 | Tap label, switch, and empty row space for reduce transparency and card task names | Each tap toggles exactly once; switch animates; state persists after leaving and reopening settings | Pending |
+| SET-02 | Tap label, switch, and empty row space for reduce transparency and card task names | Each tap toggles exactly once; switch animates; state persists after leaving and reopening settings | Passed; row and switch hit targets were exercised, and card task-name state changed immediately |
 | MOT-03 | Scroll away from chat bottom | Back-to-bottom control is visibly circular with a centered icon | Pending |
 | PROC-03 | Collapse command, read-file and reasoning rows | Each has a compact one-line preview and no extra heading level | Pending |
 | PROC-04 | Expand command/read-file/reasoning rows | Preview fades out, direct detail enters, and repeated toggles are stable | Pending |
@@ -47,7 +47,7 @@ wait for a fresh full regression.
 | PROC-11 | Collapse a process group with more than three distinct operation labels | The summary ends with `等N项`, where N equals the total direct operation count; it stays one line | Pending |
 | NAV-09 | Open and close drawer search repeatedly | The search field enters and leaves with the same short directional motion; the drawer does not jump | Pending |
 | MOT-04 | Collapse and expand the pinned section | Its trailing chevron rotates with the state and remains visible in the header | Pending |
-| SET-03 | Toggle reduce motion and reduce transparency | Each switch visibly changes immediately, stays visible with pending feedback, and remains at the saved value after reopening settings | Pending |
+| SET-03 | Toggle reduce motion and reduce transparency | Each switch visibly changes immediately, stays visible with pending feedback, and remains at the saved value after reopening settings | Passed; both values survived settings root -> appearance navigation and the appropriate state returned from the fixture write |
 | SET-04 | Change every DSH transcript mode and return to the active chat | Compact/standard, detailed-running and verbose modes produce distinct process disclosure behavior without reopening the chat | Pending |
 | IMG-06 | Open the image lightbox and tap empty space around the contained image | The lightbox closes; taps on the image itself do not close it | Pending |
 | IMG-07 | Long-press an image in the lightbox and confirm the system save prompt | The original image appears in the system photo library and one short success toast is shown | Pending |
@@ -62,7 +62,7 @@ wait for a fresh full regression.
 | DIFF-03 | Open an expanded file-change diff and tap the `#` code control | Real old/new line numbers appear in a stable gutter; tapping again removes them; add/remove colors do not change | Pending |
 | IMG-08 | Send two or more images in one user message and inspect the bubble | No filename captions appear; compact thumbnails share rows, wrap as needed, and each opens the matching lightbox image | Pending |
 | FILE-06 | Tap each of several valid file and folder links in one transcript message | Every tapped link resolves independently and opens its matching root-level preview/browser | Pending |
-| SET-05 | Open `设置 > 服务与账户` | The `当前服务` label and service address align to the leading edge | Pending |
+| SET-05 | Open `设置 > 服务与账户` | The `当前服务` label and service address align to the leading edge | Passed; page opened in the safe area and both labels were leading-aligned |
 | SET-06 | Open interface mode, dismiss it, then open it again without leaving the service page | The sheet opens on every attempt and closes cleanly by outside tap, close control or selection | Pending |
 | SET-07 | Open `设置 > DSH 设置` against plugin 0.3.5 | The page shows `插件版本 0.3.5` in a compact read-only row; an older Host without the field shows `未报告` | Passed; the online phone showed `插件版本 v0.3.5` and the deployed `/pocket/api/state` returned `pluginVersion: "0.3.5"` |
 | AUTH-01 | Tap logout, dismiss the confirmation, then confirm logout | Cancel keeps the session; confirmation clears auth/caches and returns to login | Pending |
