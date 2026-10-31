@@ -870,10 +870,76 @@ test('workspace document model distinguishes previewable images, SVG and Markdow
   assert.equal(document.nativeDocumentDescriptor('diagram.svg').language, 'svg');
   assert.equal(document.nativeDocumentDescriptor('README.MD').kind, 'markdown');
   assert.equal(document.nativeDocumentDescriptor('README.MD').canToggle, true);
+  assert.equal(document.nativeDocumentDescriptor('manual.pdf').kind, 'pdf');
+  assert.equal(document.nativeDocumentDescriptor('manual.pdf').canPreview, true);
+  assert.equal(document.nativeDocumentDescriptor('manual.pdf').canToggle, false);
+  assert.equal(document.nativeDocumentDescriptor('site/index.html').kind, 'html');
+  assert.equal(document.nativeDocumentDescriptor('site/index.html').language, 'html');
+  assert.equal(document.nativeDocumentDescriptor('site/index.html').defaultMode, 'preview');
+  assert.equal(document.nativeDocumentDescriptor('site/index.html').canToggle, true);
   assert.equal(document.nativeDocumentDescriptor('src/main.ets').kind, 'code');
   assert.equal(document.nativeDocumentDescriptor('src/main.ets').language, 'arkts');
   assert.equal(document.nativeDocumentDescriptor('LICENSE').kind, 'unknown');
   assert.equal(document.nativeDocumentExtension('archive.tar.gz'), 'gz');
+});
+
+test('browser history stores only compact paths at arbitrary depth', () => {
+  const { NativeBrowserHistory } = load('NativeBrowserHistory', {});
+  const history = new NativeBrowserHistory();
+  for (let index = 0; index < 40; index++) {
+    history.push(index % 2 ? 'file' : 'directory', 'src/' + index);
+  }
+  assert.equal(history.size(), 40);
+  assert.deepEqual({ ...history.peek() }, { kind: 'file', path: 'src/39' });
+  assert.deepEqual({ ...history.pop() }, { kind: 'file', path: 'src/39' });
+  assert.deepEqual({ ...history.pop() }, { kind: 'directory', path: 'src/38' });
+  assert.equal(history.size(), 38);
+  assert.deepEqual(Object.keys(history.peek()).sort(), ['kind', 'path']);
+});
+
+test('HTML resolution, references and inlining stay workspace scoped', () => {
+  const html = load('NativeHtmlDocument', {});
+  assert.equal(html.nativeHtmlResolveReference('site/pages/index.html', '../img/a.png'), 'site/img/a.png');
+  assert.equal(html.nativeHtmlResolveReference('site/pages/index.html', '/shared/b.css'), 'shared/b.css');
+  assert.equal(html.nativeHtmlResolveReference('site/index.html', '../../secret'), '');
+  assert.equal(html.nativeHtmlResolveReference('site/index.html', 'https://example.test/a.css'), '');
+  assert.equal(html.nativeHtmlResolveReference('site/index.html', 'data:text/css,a'), '');
+  const source = `<link rel="stylesheet" href="app.css"><script src="app.js"></script>` +
+    `<img src="../img/logo.png" srcset="../img/logo.png 1x, ../img/logo@2x.png 2x">` +
+    `<style>.hero{background:url('../img/hero.webp')}</style><a href="guide.md">guide</a>`;
+  assert.deepEqual(Array.from(html.nativeHtmlReferences(source, 'site/index.html'), row =>
+    `${row.kind}:${row.path}`), [
+    'style:site/app.css', 'script:site/app.js', 'binary:img/logo.png',
+    'binary:img/logo@2x.png', 'binary:img/hero.webp'
+  ]);
+  const assets = new Map([
+    ['site/app.css', '.hero{background:url("data:image/webp;base64,AA==")}'],
+    ['site/app.js', 'data:text/javascript;base64,AA=='],
+    ['img/logo.png', 'data:image/png;base64,AA=='],
+    ['img/logo@2x.png', 'data:image/png;base64,AA=='],
+    ['img/hero.webp', 'data:image/webp;base64,AA==']
+  ]);
+  const output = html.nativeHtmlInline(source, 'site/index.html', assets);
+  assert.match(output, /<style>\.hero\{background:url/);
+  assert.match(output, /src="data:text\/javascript;base64,AA=="/);
+  assert.match(output, /srcset="data:image\/png;base64,AA== 1x,data:image\/png;base64,AA== 2x"/);
+  assert.match(output, /href="dshharmony:\/\/file\?path=site%2Fguide\.md"/);
+  assert.match(output, /Content-Security-Policy/);
+  assert.match(output, /connect-src 'none'/);
+});
+
+test('PDF and HTML preview source contracts use bounded native surfaces', () => {
+  const preview = readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeFilePreview.ets', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeHtmlPreview.ets', import.meta.url), 'utf8');
+  assert.match(preview, /previewPdfLimit: number = 64 \* 1024 \* 1024/);
+  assert.match(preview, /NativeFileTransfer\.readComplete\([\s\S]{0,180}previewPdfLimit/);
+  assert.match(preview, /filePreview\.canPreview\(context, uri\)[\s\S]{0,180}filePreview\.openPreview\(context/);
+  assert.match(preview, /NativeHtmlPreview\(\{ client: this\.client, sessionId: this\.sessionId/);
+  assert.match(html, /htmlAssetLimit: number = 32 \* 1024 \* 1024/);
+  assert.match(html, /htmlAssetCountLimit: number = 32/);
+  assert.match(html, /controller\.loadData\(this\.prepared, 'text\/html', 'UTF-8', 'dshharmony:\/\/workspace\/'\)/);
+  assert.match(html, /\.fileAccess\(false\)/);
+  assert.match(html, /onLoadIntercept\(\(event\): boolean => this\.intercept/);
 });
 
 test('workspace document projections preserve source offsets and Markdown block order', () => {

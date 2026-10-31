@@ -15,6 +15,9 @@ import {
   NativeWorkspaceDirectoryCacheEntry,
   nativeDirectoryFingerprint
 } from '../services/NativeWorkspaceCache';
+import { NativeStorageManager } from '../services/NativeStorageManager';
+import { NativeBrowserHistory, NativeBrowserHistoryEntry } from '../services/NativeBrowserHistory';
+import { NativeFileViewRequest } from '../services/NativeSessionModel';
 
 class NativePathPart {
   label: string = '';
@@ -28,6 +31,7 @@ export struct NativeFileBrowser {
   sessionId: string = '';
   workspaceRoot: string = '';
   @Prop path: string = '';
+  @Prop initialPreviewPath: string = '';
   onClose: () => void = (): void => {};
   @StorageLink('nativeDark') private dark: boolean = false;
   @StorageLink('nativeSafeTop') private safeTop: number = 0;
@@ -35,6 +39,7 @@ export struct NativeFileBrowser {
   @StorageLink('nativeSafeLeft') private safeLeft: number = 0;
   @StorageLink('nativeSafeRight') private safeRight: number = 0;
   @StorageLink('nativeBackRevision') @Watch('systemBack') private backRevision: number = 0;
+  @StorageLink('nativeBrowserPushRevision') @Watch('browserPushChanged') private browserPushRevision: number = 0;
   @State private navigationPath: string = '';
   @State private displayPath: string = '';
   @State private entries: NativeDirectoryEntry[] = [];
@@ -49,10 +54,15 @@ export struct NativeFileBrowser {
   private hasLoaded: boolean = false;
   private requestGeneration: number = 0;
   private rootExitArmedAt: number = 0;
+  private history: NativeBrowserHistory = new NativeBrowserHistory();
 
   aboutToAppear(): void {
     this.mounted = true;
     this.navigationPath = this.workspacePath(this.path);
+    if (this.initialPreviewPath) {
+      this.history.push('directory', this.navigationPath);
+      this.previewPath = this.workspacePath(this.initialPreviewPath);
+    }
     this.load();
   }
   aboutToDisappear(): void { this.mounted = false; }
@@ -62,7 +72,7 @@ export struct NativeFileBrowser {
   private workspacePath(value: string): string {
     return this.client.workspaceRelativePath(this.sessionId, value, this.workspaceRoot);
   }
-  private async load(next: string = this.navigationPath): Promise<void> {
+  private async load(next: string = this.navigationPath): Promise<boolean> {
     const requested = this.workspacePath(next);
     const previousPath = this.navigationPath;
     const previousDisplayPath = this.displayPath;
@@ -83,7 +93,7 @@ export struct NativeFileBrowser {
     try {
       cached = await NativeWorkspaceCache.loadDirectory(
         context, scope, this.sessionId, requested);
-      if (!this.mounted || generation !== this.requestGeneration) return;
+      if (!this.mounted || generation !== this.requestGeneration) return false;
       if (cached) {
         this.navigationPath = requested;
         this.displayPath = cached.listing.path || requested;
@@ -95,7 +105,7 @@ export struct NativeFileBrowser {
         this.client.rememberBrowsePath(this.sessionId, requested);
       }
       const value: NativeDirectoryListing = await this.client.listFiles(this.sessionId, requested);
-      if (!this.mounted || generation !== this.requestGeneration) return;
+      if (!this.mounted || generation !== this.requestGeneration) return false;
       const fingerprint = nativeDirectoryFingerprint(value.entries, value.truncated);
       this.navigationPath = requested;
       this.displayPath = value.path;
@@ -108,15 +118,20 @@ export struct NativeFileBrowser {
       this.client.rememberBrowsePath(this.sessionId, requested);
       if (!cached || cached.fingerprint !== fingerprint) {
         NativeWorkspaceCache.saveDirectory(
-          context, scope, this.sessionId, requested, value).catch((): void => {});
+          context, scope, this.sessionId, requested, value)
+          .then((): void => {
+            NativeStorageManager.enforceDefaultLimit(
+              context, scope, this.sessionId).catch((): void => {});
+          }).catch((): void => {});
       }
+      return true;
     } catch (error) {
-      if (!this.mounted || generation !== this.requestGeneration) return;
+      if (!this.mounted || generation !== this.requestGeneration) return false;
       const stableUnavailable = error instanceof NativeHttpError &&
         error.status >= 400 && error.status < 500;
       if (cached && !stableUnavailable) {
         // A validated warm frame remains useful while a transient refresh fails.
-        return;
+        return true;
       }
       if (cached) {
         await NativeWorkspaceCache.removeEntry(
@@ -138,6 +153,7 @@ export struct NativeFileBrowser {
         this.hasLoaded = false;
         this.error = '无法打开此文件夹';
       }
+      return false;
     } finally {
       if (this.mounted && generation === this.requestGeneration) {
         this.loading = false;
@@ -145,37 +161,27 @@ export struct NativeFileBrowser {
       }
     }
   }
-  private parent(): void {
-    const clean = this.navigationPath.replace(/\/+$/, '');
-    const split = clean.lastIndexOf('/');
-    this.load(split > 0 ? clean.slice(0, split) : '');
+  private currentEntry(): NativeBrowserHistoryEntry {
+    return new NativeBrowserHistoryEntry(this.previewPath ? 'file' : 'directory',
+      this.previewPath || this.navigationPath);
   }
-  private child(entry: NativeDirectoryEntry): string {
-    if (!this.navigationPath) return entry.name;
-    return this.navigationPath.replace(/\/+$/, '') + '/' + entry.name;
+  private async navigate(next: string): Promise<void> {
+    const requested = this.workspacePath(next);
+    if (!this.previewPath && requested === this.navigationPath) return;
+    this.history.push(this.currentEntry().kind, this.currentEntry().path);
+    this.previewPath = '';
+    if (!await this.load(requested)) this.history.pop();
   }
-  private filePath(entry: NativeDirectoryEntry): string {
-    const parent = this.displayPath.replace(/\/+$/, '');
-    if (!parent) return this.child(entry);
-    return parent + '/' + entry.name;
-  }
-  private open(entry: NativeDirectoryEntry): void {
-    if (entry.type === 'directory') {
-      this.load(this.child(entry));
-    } else if (entry.type === 'file') {
-      this.client.rememberBrowsePath(this.sessionId, this.navigationPath);
+  private back(): void {
+    const previous = this.history.pop();
+    if (previous) {
       this.rootExitArmedAt = 0;
-      this.animate(() => { this.previewPath = this.filePath(entry); });
-    }
-  }
-  private systemBack(): void {
-    if (this.previewPath) {
-      this.previewPath = '';
-      this.rootExitArmedAt = 0;
-      return;
-    }
-    if (this.navigationPath) {
-      this.parent();
+      if (previous.kind === 'file') {
+        this.animate((): void => { this.previewPath = previous.path; });
+      } else {
+        this.previewPath = '';
+        this.load(previous.path);
+      }
       return;
     }
     const now = Date.now();
@@ -188,6 +194,48 @@ export struct NativeFileBrowser {
       message: '再次返回退出文件浏览',
       duration: 1600
     });
+  }
+  private browserPushChanged(): void {
+    if (!this.mounted) return;
+    const raw = AppStorage.get<string>('nativeBrowserPushPayload') || '';
+    if (!raw) return;
+    try {
+      const request = JSON.parse(raw) as NativeFileViewRequest;
+      if (request.sessionId !== this.sessionId ||
+        (request.kind !== 'file' && request.kind !== 'browser') ||
+        (request.kind === 'file' && !request.path)) return;
+      this.rootExitArmedAt = 0;
+      if (request.kind === 'file') {
+        const next = this.workspacePath(request.path);
+        if (next === this.previewPath) return;
+        this.history.push(this.currentEntry().kind, this.currentEntry().path);
+        this.animate((): void => { this.previewPath = next; });
+      } else {
+        this.navigate(request.path);
+      }
+    } catch (_) {}
+  }
+  private child(entry: NativeDirectoryEntry): string {
+    if (!this.navigationPath) return entry.name;
+    return this.navigationPath.replace(/\/+$/, '') + '/' + entry.name;
+  }
+  private filePath(entry: NativeDirectoryEntry): string {
+    const parent = this.displayPath.replace(/\/+$/, '');
+    if (!parent) return this.child(entry);
+    return parent + '/' + entry.name;
+  }
+  private open(entry: NativeDirectoryEntry): void {
+    if (entry.type === 'directory') {
+      this.navigate(this.child(entry));
+    } else if (entry.type === 'file') {
+      this.client.rememberBrowsePath(this.sessionId, this.navigationPath);
+      this.rootExitArmedAt = 0;
+      this.history.push(this.currentEntry().kind, this.currentEntry().path);
+      this.animate(() => { this.previewPath = this.filePath(entry); });
+    }
+  }
+  private systemBack(): void {
+    this.back();
   }
   private async download(entry: NativeDirectoryEntry): Promise<void> {
     if (this.downloadingFile || entry.type !== 'file') return;
@@ -251,7 +299,7 @@ export struct NativeFileBrowser {
         DSHIcon({ glyph: 'chevron-left-outline', glyphSize: 17,
           color: this.dark ? '#F9FAFB' : '#17181B' })
       }.width(32).height(32).borderRadius(9).backgroundColor(Color.Transparent)
-        .accessibilityText('上一级').enabled(!!this.navigationPath).onClick(() => { this.parent(); })
+        .accessibilityText('返回').onClick(() => { this.back(); })
       Column({ space: 1 }) {
         Row({ space: 5 }) {
           Text(this.navigationPath || '工作区').fontSize(14).fontWeight(FontWeight.Medium).maxLines(1)
@@ -268,7 +316,7 @@ export struct NativeFileBrowser {
           color: this.dark ? '#CFD3D6' : '#61666B' })
       }.width(32).height(32).borderRadius(9).backgroundColor(Color.Transparent)
         .accessibilityText('在工作区根目录中查找文件').onClick(() => {
-          if (this.navigationPath) this.load('');
+          if (this.navigationPath) this.navigate('');
         })
       Button({ type: ButtonType.Normal }) {
         DSHIcon({ glyph: 'close-outline', glyphSize: 15,
@@ -284,7 +332,7 @@ export struct NativeFileBrowser {
         Button(this.navigationPath ? '工作区' : '根目录', { type: ButtonType.Normal })
           .height(26).fontSize(10).borderRadius(7).padding({ left: 6, right: 6 })
           .backgroundColor(Color.Transparent).fontColor(this.dark ? '#93969B' : '#8A8D91')
-          .enabled(!!this.navigationPath).onClick(() => { this.load(''); })
+          .enabled(!!this.navigationPath).onClick(() => { this.navigate(''); })
         ForEach(this.crumbs(), (part: NativePathPart, index: number) => {
           Text('/').fontSize(10).fontColor(this.dark ? '#777A80' : '#A1A1AA')
           Button(part.label, { type: ButtonType.Normal })
@@ -292,7 +340,7 @@ export struct NativeFileBrowser {
             .backgroundColor(Color.Transparent)
             .fontColor(index === this.crumbs().length - 1 ?
               this.dark ? '#F9FAFB' : '#17181B' : this.dark ? '#93969B' : '#8A8D91')
-            .onClick(() => { this.load(part.path); })
+            .onClick(() => { this.navigate(part.path); })
         }, (part: NativePathPart) => part.path)
       }.constraintSize({ minWidth: '100%' }).justifyContent(FlexAlign.Start)
     }.scrollable(ScrollDirection.Horizontal).width('100%').height(28)
@@ -414,7 +462,7 @@ export struct NativeFileBrowser {
       }).width('100%').height('100%').backgroundColor(this.dark ? '#151517' : '#FFFFFF')
       if (this.previewPath) {
         NativeFilePreview({ client: this.client, sessionId: this.sessionId, path: this.previewPath,
-          onClose: (): void => { this.previewPath = ''; } })
+          onClose: (): void => { this.back(); } })
           .transition(NativeMotion.overlayTransition())
       }
     }.width('100%').height('100%')

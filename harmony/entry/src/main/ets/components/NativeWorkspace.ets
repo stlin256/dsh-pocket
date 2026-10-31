@@ -255,6 +255,12 @@ export struct NativeWorkspace {
       request.sessionId = parsed.sessionId;
       request.path = parsed.path;
       request.requestId = parsed.requestId;
+      if (this.fileViewOpen && this.fileView.sessionId === request.sessionId) {
+        AppStorage.setOrCreate<string>('nativeBrowserPushPayload', JSON.stringify(request));
+        AppStorage.setOrCreate<number>('nativeBrowserPushRevision',
+          (AppStorage.get<number>('nativeBrowserPushRevision') || 0) + 1);
+        return;
+      }
       if (parsed.kind === 'browser') {
         this.client.rememberBrowsePath(parsed.sessionId, parsed.path);
       } else {
@@ -278,6 +284,11 @@ export struct NativeWorkspace {
     const workspace = this.workspaces.items.find((item: NativeWorkspaceItem): boolean =>
       item.sessionIds.includes(sessionId));
     return workspace?.path || '';
+  }
+  private browserDirectoryForFile(path: string): string {
+    const clean = path.replace(/\\/g, '/').replace(/\/+$/, '');
+    const slash = clean.lastIndexOf('/');
+    return slash > 0 ? clean.slice(0, slash) : '';
   }
 
   private sessionsChanged(): void {
@@ -634,11 +645,7 @@ export struct NativeWorkspace {
   }
   private backToSessions(): void {
     if (this.imagePreviewOpen) { this.closeImagePreview(); return; }
-    if (this.fileViewOpen) {
-      if (this.fileView.kind === 'browser') return;
-      this.closeFileView();
-      return;
-    }
+    if (this.fileViewOpen) return;
     if (this.menuId || this.utilityOpen) { this.menuId = ''; this.utilityOpen = false; return; }
     if (this.modelPickerOpen) { this.modelPickerOpen = false; return; }
     if (this.workspacePickerOpen) {
@@ -2352,14 +2359,11 @@ export struct NativeWorkspace {
           } })
       }
       if (this.fileViewOpen) {
-        if (this.fileView.kind === 'browser') {
-          NativeFileBrowser({ client: this.client, sessionId: this.fileView.sessionId,
-            workspaceRoot: this.workspaceRootFor(this.fileView.sessionId),
-            path: this.fileView.path, onClose: (): void => { this.closeFileView(); } })
-        } else {
-          NativeFilePreview({ client: this.client, sessionId: this.fileView.sessionId,
-            path: this.fileView.path, onClose: (): void => { this.closeFileView(); } })
-        }
+        NativeFileBrowser({ client: this.client, sessionId: this.fileView.sessionId,
+          workspaceRoot: this.workspaceRootFor(this.fileView.sessionId),
+          path: this.fileView.kind === 'browser' ? this.fileView.path : this.browserDirectoryForFile(this.fileView.path),
+          initialPreviewPath: this.fileView.kind === 'file' ? this.fileView.path : '',
+          onClose: (): void => { this.closeFileView(); } })
       }
       if (this.imagePreviewOpen) {
         NativeImageLightbox({ client: this.client, sessionId: this.imagePreview.sessionId,

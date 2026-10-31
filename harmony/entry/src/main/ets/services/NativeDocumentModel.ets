@@ -64,6 +64,20 @@ export function nativeDocumentDescriptor(path: string): NativeDocumentDescriptor
     descriptor.canPreview = true;
     return descriptor;
   }
+  if (extension === 'pdf') {
+    descriptor.kind = 'pdf';
+    descriptor.defaultMode = 'preview';
+    descriptor.canPreview = true;
+    return descriptor;
+  }
+  if (extension === 'html' || extension === 'htm') {
+    descriptor.kind = 'html';
+    descriptor.language = 'html';
+    descriptor.defaultMode = 'preview';
+    descriptor.canToggle = true;
+    descriptor.canPreview = true;
+    return descriptor;
+  }
   if (imageExtensions.has(extension)) {
     descriptor.kind = 'image';
     descriptor.defaultMode = 'preview';

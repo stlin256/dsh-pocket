@@ -2,7 +2,7 @@
 
 Date: 2026-11-01
 
-Status: implementation complete pending user device verification.
+Status: implementation and automated checks complete; device rows pending user verification.
 
 | ID | Scenario | Expected result | Result |
 |---|---|---|---|
@@ -24,5 +24,8 @@ Status: implementation complete pending user device verification.
 | HTML-03 | Tap a local file anchor in rendered HTML | The target opens in the same browser/file history and Back returns to the HTML preview | Pending |
 | HTML-04 | Tap an HTTP(S) anchor in rendered HTML | The target opens in the system browser without leaving the native file reader | Pending |
 | FILE-01 | Download PDF and HTML from their preview toolbars | System save picker writes the current file version; workspace remains unchanged | Pending |
+| SCROLL-01 | Scroll away from the latest message | A centered circular outlined down-arrow appears inside a soft blurred halo; the new-content dot remains visible when applicable | Pending |
+| SCROLL-02 | Enable reduced transparency and repeat SCROLL-01 | The halo becomes opaque or disappears while the circular control and action remain unchanged | Pending |
+| SCROLL-03 | Tap the down-arrow after new content | The transcript returns to the latest content with the existing nonlinear motion and no sudden stop | Pending |
 | REG-01 | Open Markdown, SVG, image, source, directory and Markdown table links after the changes | Existing native previews and navigation still work in light/dark modes | Pending |
 

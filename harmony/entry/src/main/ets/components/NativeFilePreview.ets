@@ -1,6 +1,9 @@
 import { common } from '@kit.AbilityKit';
+import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
 import { pasteboard } from '@kit.BasicServicesKit';
+import { fileIo, fileUri } from '@kit.CoreFileKit';
+import { filePreview } from '@kit.PreviewKit';
 import {
   NativeFilePage,
   NativeFileStat,
@@ -15,13 +18,17 @@ import { NativeImageZoom, NativeImageZoomTarget } from '../services/NativeImageZ
 import { NativeDocumentModeSwitch } from './NativeDocumentModeSwitch';
 import { NativeCodeViewer } from './NativeCodeViewer';
 import { NativeMarkdownPreview } from './NativeMarkdownPreview';
+import { NativeHtmlPreview } from './NativeHtmlPreview';
 import {
   NativeWorkspaceCache,
   NativeWorkspaceCachedBinary,
   NativeWorkspaceTextCacheEntry
 } from '../services/NativeWorkspaceCache';
+import { NativeStorageManager } from '../services/NativeStorageManager';
 
 const previewImageLimit: number = 128 * 1024 * 1024;
+const previewPdfLimit: number = 64 * 1024 * 1024;
+const previewHtmlLimit: number = 8 * 1024 * 1024;
 
 /** One compact foreground reader shared by chat links and the file browser. */
 @Component
@@ -54,6 +61,8 @@ export struct NativeFilePreview {
   @State private mode: string = 'code';
   @State private canToggle: boolean = false;
   @State private lineStart: number = 1;
+  @State private pdfUri: string = '';
+  @State private pdfOpening: boolean = false;
   private source: image.ImageSource | null = null;
   private mounted: boolean = false;
   private textLoaded: boolean = false;
@@ -91,6 +100,11 @@ export struct NativeFilePreview {
     this.generation++;
     this.releaseImage();
   }
+  private enforceCacheLimit(): void {
+    NativeStorageManager.enforceDefaultLimit(
+      this.getUIContext().getHostContext() as common.UIAbilityContext,
+      this.client.cacheKey(), this.sessionId).catch((): void => {});
+  }
   private pathChanged(): void {
     if (this.mounted) this.reload();
   }
@@ -106,6 +120,8 @@ export struct NativeFilePreview {
     this.offsetX = 0;
     this.offsetY = 0;
     this.applyDescriptor(nativeDocumentDescriptor(this.path));
+    this.pdfUri = '';
+    this.pdfOpening = false;
     this.load(this.generation);
   }
   private applyDescriptor(value: NativeDocumentDescriptor): void {
@@ -272,7 +288,11 @@ export struct NativeFilePreview {
     const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     const scope = this.client.cacheKey();
     try {
-      if (this.documentKind === 'image' || (this.documentKind === 'svg' && this.mode === 'preview')) {
+      if (this.documentKind === 'pdf') {
+        await this.loadPdf(generation);
+      } else if (this.documentKind === 'html') {
+        await this.loadHtml(generation);
+      } else if (this.documentKind === 'image' || (this.documentKind === 'svg' && this.mode === 'preview')) {
         const cachedImage = await this.loadCachedImage(generation, context, scope);
         if (!this.mounted || generation !== this.generation) return;
         if (cachedImage) {
@@ -329,6 +349,7 @@ export struct NativeFilePreview {
           const page = await this.loadText(true, generation);
           await NativeWorkspaceCache.saveText(
             context, scope, this.sessionId, this.path, page).catch((): void => {});
+          this.enforceCacheLimit();
           if (this.documentKind === 'unknown') {
             this.documentKind = 'text';
             this.mode = 'code';
@@ -351,6 +372,106 @@ export struct NativeFilePreview {
     this.bytesLabel = stat.bytes >= 0 ? this.formatBytes(stat.bytes) : '';
     return stat;
   }
+  private async materializePdf(context: common.UIAbilityContext,
+    content: NativeFileContent): Promise<string> {
+    const path = context.cacheDir + '/dsh-pdf-' + util.generateRandomUUID() + '.pdf';
+    const file = fileIo.openSync(path,
+      fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+    try {
+      fileIo.writeSync(file.fd, content.bytes.buffer as ArrayBuffer);
+    } finally {
+      fileIo.closeSync(file);
+    }
+    return path;
+  }
+  private async openPdf(): Promise<void> {
+    if (!this.pdfUri || this.pdfOpening) return;
+    this.pdfOpening = true;
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const uri = fileUri.getUriFromPath(this.pdfUri);
+      if (!await filePreview.canPreview(context, uri)) throw new Error('PDF preview unavailable');
+      await filePreview.openPreview(context, {
+        title: this.title,
+        uri: uri,
+        mimeType: 'application/pdf'
+      });
+      if (this.mounted) this.error = '';
+    } catch (_) {
+      if (this.mounted) this.error = '无法打开 PDF';
+    } finally {
+      if (this.mounted) this.pdfOpening = false;
+    }
+  }
+  private async loadPdf(generation: number): Promise<void> {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const scope = this.client.cacheKey();
+    let content: NativeFileContent | null = null;
+    const cached: NativeWorkspaceCachedBinary | null =
+      await NativeWorkspaceCache.loadBinary(context, scope, this.sessionId, this.path);
+    if (cached && this.mounted && generation === this.generation) {
+      content = new NativeFileContent();
+      content.bytes = cached.bytes;
+      content.version = cached.version;
+      content.totalBytes = cached.totalBytes;
+      this.version = cached.version;
+      this.expectedBytes = cached.totalBytes;
+      this.bytesLabel = cached.totalBytes >= 0 ? this.formatBytes(cached.totalBytes) : '';
+    }
+    let stat: NativeFileStat | null = null;
+    try { stat = await this.loadMetadata(generation); } catch (_) {}
+    if (!this.mounted || generation !== this.generation) return;
+    if (!content || (stat && stat.version !== content.version)) {
+      content = await NativeFileTransfer.readComplete(
+        this.client, this.sessionId, this.path, previewPdfLimit,
+        stat?.version || '', stat?.bytes === undefined ? -1 : stat.bytes);
+      await NativeWorkspaceCache.saveBinary(context, scope, this.sessionId, this.path,
+        content.bytes, content.version, content.totalBytes).catch((): void => {});
+      this.enforceCacheLimit();
+    }
+    if (!this.mounted || generation !== this.generation) return;
+    this.version = content.version;
+    this.expectedBytes = content.totalBytes;
+    this.bytesLabel = content.totalBytes >= 0 ? this.formatBytes(content.totalBytes) : '';
+    this.pdfUri = await this.materializePdf(context, content);
+    if (!this.mounted || generation !== this.generation) return;
+    this.loading = false;
+    this.openPdf();
+  }
+  private async loadHtml(generation: number): Promise<void> {
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const scope = this.client.cacheKey();
+    const cached: NativeWorkspaceTextCacheEntry | null =
+      await NativeWorkspaceCache.loadText(context, scope, this.sessionId, this.path);
+    if (cached && cached.page.eof && this.mounted && generation === this.generation) {
+      this.applyPage(cached.page, true);
+      this.loading = false;
+    }
+    let stat: NativeFileStat | null = null;
+    try { stat = await this.loadMetadata(generation); } catch (_) {}
+    if (!this.mounted || generation !== this.generation) return;
+    if (cached?.page.eof && (!stat || stat.version === cached.page.version)) return;
+    try {
+      const content = await NativeFileTransfer.readComplete(
+        this.client, this.sessionId, this.path, previewHtmlLimit,
+        stat?.version || '', stat?.bytes === undefined ? -1 : stat.bytes);
+      const page = new NativeFilePage();
+      page.absolutePath = this.path;
+      page.version = content.version;
+      page.text = util.TextDecoder.create('utf-8').decodeToString(content.bytes);
+      page.offset = 1;
+      page.lines = page.text.replace(/\r\n|\r/g, '\n').split('\n').length;
+      page.eof = true;
+      if (!this.mounted || generation !== this.generation) return;
+      this.applyPage(page, true);
+      this.bytesLabel = content.totalBytes >= 0 ? this.formatBytes(content.totalBytes) : '';
+      await NativeWorkspaceCache.saveText(
+        context, scope, this.sessionId, this.path, page).catch((): void => {});
+      this.enforceCacheLimit();
+    } catch (_) {
+      if (!cached && this.mounted && generation === this.generation) this.error = '无法读取网页';
+    }
+  }
   private async loadImage(generation: number, expectedVersion: string = this.version,
     expectedBytes: number = this.expectedBytes): Promise<boolean> {
     try {
@@ -361,6 +482,7 @@ export struct NativeFilePreview {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       await NativeWorkspaceCache.saveBinary(context, this.client.cacheKey(), this.sessionId,
         this.path, content.bytes, content.version, content.totalBytes).catch((): void => {});
+      this.enforceCacheLimit();
       return true;
     } catch (error) {
       console.error('NativeFilePreview image read failed: ' +
@@ -478,6 +600,7 @@ export struct NativeFilePreview {
         const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
         await NativeWorkspaceCache.saveText(context, this.client.cacheKey(), this.sessionId,
           this.path, this.persistedTextPage(page)).catch((): void => {});
+        this.enforceCacheLimit();
       }
     } catch (_) {
       if (this.mounted && generation === this.generation) this.error = '读取更多内容失败';
@@ -496,6 +619,7 @@ export struct NativeFilePreview {
           const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
           await NativeWorkspaceCache.saveText(context, this.client.cacheKey(), this.sessionId,
             this.path, page).catch((): void => {});
+          this.enforceCacheLimit();
         })
         .catch((): void => { if (generation === this.generation) this.error = '无法读取源代码'; })
         .finally((): void => { if (this.mounted && generation === this.generation) this.loading = false; });
@@ -591,7 +715,10 @@ export struct NativeFilePreview {
   }
   @Builder
   private textBody() {
-    if (this.documentKind === 'markdown' && this.mode === 'preview') {
+    if (this.documentKind === 'html' && this.mode === 'preview') {
+      NativeHtmlPreview({ client: this.client, sessionId: this.sessionId,
+        source: this.text, path: this.path })
+    } else if (this.documentKind === 'markdown' && this.mode === 'preview') {
       Scroll() {
         NativeMarkdownPreview({ client: this.client, sessionId: this.sessionId,
           source: this.text })
@@ -604,12 +731,41 @@ export struct NativeFilePreview {
     }
   }
   @Builder
+  private pdfBody() {
+    Column({ space: 10 }) {
+      DSHIcon({ glyph: 'file-outline', glyphSize: 28,
+        color: this.dark ? '#8AB4FF' : '#3964FE' })
+      Text(this.title).fontSize(14).fontWeight(FontWeight.Medium)
+        .fontColor(this.dark ? '#F9FAFB' : '#17181B')
+      if (this.bytesLabel) {
+        Text(this.bytesLabel).fontSize(11).fontColor(this.dark ? '#93969B' : '#8A8D91')
+      }
+      Button({ type: ButtonType.Normal }) {
+        Row({ space: 6 }) {
+          if (this.pdfOpening) {
+            LoadingProgress().width(14).height(14).color('#FFFFFF')
+          } else {
+            DSHIcon({ glyph: 'eye-outline', glyphSize: 14, color: '#FFFFFF' })
+          }
+          Text('打开预览').fontSize(12).fontColor('#FFFFFF')
+        }.padding({ left: 10, right: 12 })
+      }.height(36).borderRadius(10).backgroundColor(this.dark ? '#315ECA' : '#3964FE')
+        .enabled(!this.pdfOpening).accessibilityText('打开 PDF 预览')
+        .onClick((): void => { this.openPdf(); })
+      if (this.error) {
+        Text(this.error).fontSize(11).fontColor(this.dark ? '#FFB1B1' : '#B3261E')
+      }
+    }.layoutWeight(1).justifyContent(FlexAlign.Center)
+  }
+  @Builder
   private body() {
     if (this.loading) {
       Column({ space: 10 }) {
         LoadingProgress().width(24).height(24).color(this.dark ? '#8AB4FF' : '#3964FE')
         Text('正在读取…').fontSize(12).fontColor(this.dark ? '#93969B' : '#8A8D91')
       }.layoutWeight(1).justifyContent(FlexAlign.Center)
+    } else if (this.documentKind === 'pdf' && this.pdfUri) {
+      this.pdfBody()
     } else if (this.error && !this.imageMap && !this.textLoaded) {
       Column({ space: 12 }) {
         Text(this.error).fontSize(13).textAlign(TextAlign.Center)
