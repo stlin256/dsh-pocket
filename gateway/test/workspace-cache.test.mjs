@@ -45,6 +45,19 @@ function loadWorkspaceCache() {
       if (id === '@kit.CoreFileKit') return { fileIo: {} };
       if (id === '@kit.ArkData') return { relationalStore: {} };
       if (id === '@kit.ArkTS') return { util: {} };
+      if (id === './NativeStorageBudget') {
+        return {
+          NativeStorageCandidate: class {},
+          NativeStorageOwner: {
+            transcript: 'transcript',
+            workspaceDirectory: 'workspace-directory',
+            workspaceText: 'workspace-text',
+            workspaceBinary: 'workspace-binary',
+            attachment: 'attachment',
+            navigation: 'navigation'
+          }
+        };
+      }
       throw Error('Unexpected dependency: ' + id);
     }
   });

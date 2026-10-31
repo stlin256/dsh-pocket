@@ -4,6 +4,7 @@ import { util } from '@kit.ArkTS';
 import { NativeHarnessClient } from '../services/NativeHarnessClient';
 import { NativeImageAttachment, NativeImagePreviewRequest } from '../services/NativeSessionModel';
 import { NativeAttachmentCache } from '../services/NativeAttachmentCache';
+import { NativeStorageManager } from '../services/NativeStorageManager';
 
 class AttachmentResult { data: string = ''; }
 @Component
@@ -38,6 +39,8 @@ export struct NativeImageView {
         bytes = new util.Base64Helper().decodeSync(response.data);
         await NativeAttachmentCache.save(this.context, this.client.cacheKey(),
           this.sessionId, this.attachment, bytes).catch(() => {});
+        NativeStorageManager.enforceDefaultLimit(this.context, this.client.cacheKey(),
+          this.sessionId).catch((): void => {});
       }
       if (!this.mounted) return;
       const source = image.createImageSource(bytes.buffer as ArrayBuffer);

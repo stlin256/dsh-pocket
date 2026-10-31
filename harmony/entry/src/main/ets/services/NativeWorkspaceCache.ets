@@ -7,11 +7,15 @@ import {
   NativeDirectoryListing,
   NativeFilePage
 } from './NativeHarnessClient';
+import {
+  NativeStorageCandidate,
+  NativeStorageOwner
+} from './NativeStorageBudget';
 
 const directoryProtocol: number = 1;
 const textProtocol: number = 1;
-const metadataQuota: number = 96 * 1024 * 1024;
-const binaryQuota: number = 256 * 1024 * 1024;
+const metadataQuota: number = 512 * 1024 * 1024;
+const binaryQuota: number = 2 * 1024 * 1024 * 1024;
 const binaryFileLimit: number = 64 * 1024 * 1024;
 const textCacheLimit: number = 2 * 1024 * 1024;
 
@@ -579,6 +583,83 @@ export class NativeWorkspaceCache {
       binaries.close();
     }
     return usage;
+  }
+
+  /** Compact cache descriptors for the global LRU coordinator. */
+  static async storageCandidates(context: common.UIAbilityContext): Promise<NativeStorageCandidate[]> {
+    await NativeWorkspaceCache.writes.catch((): void => {});
+    const store = await NativeWorkspaceCache.database(context);
+    const rows = await store.querySql(
+      `SELECT 'directory' AS owner,scope_id,session_id,path,bytes,updated_at
+         FROM directory_cache
+       UNION ALL
+       SELECT 'text' AS owner,scope_id,session_id,path,bytes,updated_at
+         FROM text_cache
+       UNION ALL
+       SELECT 'binary' AS owner,scope_id,session_id,path,bytes,updated_at
+         FROM binary_cache
+       ORDER BY 6 ASC`
+    );
+    const values: NativeStorageCandidate[] = [];
+    try {
+      while (rows.goToNextRow()) {
+        const kind = rows.getString(0);
+        const owner = kind === 'directory' ? NativeStorageOwner.workspaceDirectory :
+          kind === 'text' ? NativeStorageOwner.workspaceText : NativeStorageOwner.workspaceBinary;
+        values.push(new NativeStorageCandidate(owner, rows.getString(1), rows.getString(2),
+          rows.getString(3), rows.getLong(4), rows.getLong(5)));
+      }
+    } finally {
+      rows.close();
+    }
+    return values;
+  }
+
+  static async evictStorageCandidate(context: common.UIAbilityContext,
+    candidate: NativeStorageCandidate): Promise<void> {
+    let fileName = '';
+    const operation = NativeWorkspaceCache.writes.catch((): void => {}).then(async (): Promise<void> => {
+      const store = await NativeWorkspaceCache.database(context);
+      if (candidate.owner === NativeStorageOwner.workspaceBinary) {
+        const result = await store.querySql(
+          `SELECT file_name FROM binary_cache
+           WHERE scope_id=? AND session_id=? AND path=? LIMIT 1`,
+          [candidate.scopeId, candidate.sessionId, candidate.key]);
+        try {
+          if (result.goToFirstRow()) fileName = result.getString(0);
+        } finally {
+          result.close();
+        }
+      }
+      store.beginTransaction();
+      try {
+        if (candidate.owner === NativeStorageOwner.workspaceDirectory) {
+          await store.executeSql(
+            'DELETE FROM directory_cache WHERE scope_id=? AND session_id=? AND path=?',
+            [candidate.scopeId, candidate.sessionId, candidate.key]);
+        } else if (candidate.owner === NativeStorageOwner.workspaceText) {
+          await store.executeSql(
+            'DELETE FROM text_cache WHERE scope_id=? AND session_id=? AND path=?',
+            [candidate.scopeId, candidate.sessionId, candidate.key]);
+        } else if (candidate.owner === NativeStorageOwner.workspaceBinary) {
+          await store.executeSql(
+            'DELETE FROM binary_cache WHERE scope_id=? AND session_id=? AND path=?',
+            [candidate.scopeId, candidate.sessionId, candidate.key]);
+        }
+        store.commit();
+      } catch (error) {
+        store.rollBack();
+        throw error as Error;
+      }
+    });
+    NativeWorkspaceCache.writes = operation;
+    await operation;
+    if (candidate.owner === NativeStorageOwner.workspaceBinary && !!fileName) {
+      try {
+        const absolute = NativeWorkspaceCache.binaryDirectory(context) + '/' + fileName;
+        if (fileIo.accessSync(absolute)) fileIo.unlinkSync(absolute);
+      } catch (_) {}
+    }
   }
 
   private static async trimMetadata(store: relationalStore.RdbStore, scopeId: string): Promise<void> {

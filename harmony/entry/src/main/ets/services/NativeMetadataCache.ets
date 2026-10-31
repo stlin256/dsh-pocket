@@ -1,6 +1,10 @@
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { NativeSession, NativeSessionList, NativeWorkspaceItem, NativeWorkspaceSnapshot } from './NativeSessionModel';
+import {
+  NativeStorageCandidate,
+  NativeStorageOwner
+} from './NativeStorageBudget';
 
 class NativeCacheEntry {
   savedAt: number = 0;
@@ -18,13 +22,16 @@ class NativeInteractionEntry {
  */
 export class NativeMetadataCache {
   private static memory: Map<string, NativeCacheEntry> = new Map<string, NativeCacheEntry>();
-  private static key(origin: string): string {
+  static scopeId(origin: string): string {
     let hash = 2166136261;
     for (let index = 0; index < origin.length; index++) {
       hash ^= origin.charCodeAt(index);
       hash = Math.imul(hash, 16777619);
     }
-    return 'metadata:' + (hash >>> 0).toString(16);
+    return (hash >>> 0).toString(16);
+  }
+  private static key(origin: string): string {
+    return 'metadata:' + NativeMetadataCache.scopeId(origin);
   }
   private static routeKey(origin: string): string {
     return NativeMetadataCache.key(origin) + ':last-session';
@@ -148,6 +155,47 @@ export class NativeMetadataCache {
       store.deleteSync(id);
       store.deleteSync(route);
       store.deleteSync(interactions);
+      store.flush().catch(() => {});
+    } catch (_) {}
+  }
+
+  /** One compact descriptor per authenticated navigation scope. */
+  static storageCandidates(context: common.UIAbilityContext): NativeStorageCandidate[] {
+    const values: NativeStorageCandidate[] = [];
+    try {
+      const all = NativeMetadataCache.store(context).getAllSync() as Record<string, Object>;
+      Object.keys(all).forEach((key: string): void => {
+        if (!key.startsWith('metadata:') || key.endsWith(':last-session') ||
+          key.endsWith(':interactions')) return;
+        const payload = all[key];
+        const route = all[key + ':last-session'];
+        const interactions = all[key + ':interactions'];
+        let payloadText = typeof payload === 'string' ? payload as string : '';
+        let routeText = typeof route === 'string' ? route as string : '';
+        let interactionsText = typeof interactions === 'string' ? interactions as string : '';
+        const bytes = (payloadText.length + routeText.length + interactionsText.length) * 2;
+        if (bytes <= 0) return;
+        let savedAt = 0;
+        try {
+          const parsed = JSON.parse(payloadText) as NativeCacheEntry;
+          if (Number.isFinite(parsed.savedAt)) savedAt = parsed.savedAt;
+        } catch (_) {}
+        values.push(new NativeStorageCandidate(NativeStorageOwner.navigation,
+          key.slice('metadata:'.length), '', key, bytes, savedAt));
+      });
+    } catch (_) {}
+    return values;
+  }
+
+  static evictStorageCandidate(context: common.UIAbilityContext,
+    candidate: NativeStorageCandidate): void {
+    if (candidate.owner !== NativeStorageOwner.navigation || !candidate.key) return;
+    NativeMetadataCache.memory.delete(candidate.key);
+    try {
+      const store = NativeMetadataCache.store(context);
+      store.deleteSync(candidate.key);
+      store.deleteSync(candidate.key + ':last-session');
+      store.deleteSync(candidate.key + ':interactions');
       store.flush().catch(() => {});
     } catch (_) {}
   }

@@ -26,6 +26,7 @@ import { NativeMenuItem } from '../services/NativeNavigation';
 import { NativeMetadataCache } from '../services/NativeMetadataCache';
 import { NativeTranscriptCache } from '../services/NativeTranscriptCache';
 import { NativeWorkspaceCache } from '../services/NativeWorkspaceCache';
+import { NativeStorageManager } from '../services/NativeStorageManager';
 import { NativeMotion } from '../services/NativeMotion';
 import { NativeImageLightbox } from './NativeImageLightbox';
 import { NativeFilePreview } from './NativeFilePreview';
@@ -1153,6 +1154,7 @@ export struct NativeWorkspace {
       const previousId = this.selected;
       this.client.models.set(previousId, this.model);
       NativeTranscriptCache.saveSession(this.context, this.client.cacheKey(), previousId, this.model)
+        .then((): void => { this.enforceCacheLimit(previousId); })
         .catch((): void => {});
     }
     this.client.drafts.set(this.selected, this.draft);
@@ -1537,15 +1539,19 @@ export struct NativeWorkspace {
       this.persistCache();
     }, 500);
   }
+  private enforceCacheLimit(activeSessionId: string): void {
+    const protectedSessions: string[] = Array.from(this.client.drafts.keys())
+      .concat(Array.from(this.client.uncertain.values()));
+    NativeStorageManager.enforceDefaultLimit(this.context, this.client.cacheKey(),
+      activeSessionId, protectedSessions).catch((): void => {});
+  }
   private persistCache(): void {
     const id = this.selected;
     if (!id || !this.model.messages.length) return;
     const scope = this.client.cacheKey();
     NativeTranscriptCache.saveSession(this.context, scope, id, this.model)
       .then((): void => {
-        const protectedSessions: string[] = Array.from(this.client.drafts.keys())
-          .concat(Array.from(this.client.uncertain.values()));
-        NativeTranscriptCache.trimToQuota(this.context, scope, id, protectedSessions).catch(() => {});
+        this.enforceCacheLimit(id);
       }).catch(() => {});
   }
   private async pumpHistoryDrain(): Promise<void> {
@@ -1601,7 +1607,8 @@ export struct NativeWorkspace {
         this.model.messages.length, page.hasMore)) {
         throw new Error('History page did not advance');
       }
-      NativeTranscriptCache.saveSession(this.context, scope, id, this.model).catch(() => {});
+      NativeTranscriptCache.saveSession(this.context, scope, id, this.model)
+        .then((): void => { this.enforceCacheLimit(id); }).catch(() => {});
       const next = this.visibleRows.findIndex((row: NativeMessage) => row.id === anchor);
       if (next >= 0 && top !== 0) setTimeout(() => { if (!this.mounted || this.selected !== id) return;
         try {

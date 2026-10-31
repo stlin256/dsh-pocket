@@ -4,6 +4,10 @@ import {
   NativeSessionCacheRecord,
   NativeSessionModel
 } from './NativeSessionModel';
+import {
+  NativeStorageCandidate,
+  NativeStorageOwner
+} from './NativeStorageBudget';
 
 const TRANSCRIPT_CHUNK_CHARS: number = 256 * 1024;
 
@@ -47,7 +51,7 @@ export class NativeTranscriptCache {
   private static store: relationalStore.RdbStore | null = null;
   private static opening: Promise<relationalStore.RdbStore> | null = null;
   private static writes: Promise<void> = Promise.resolve();
-  private static scopeId(value: string): string {
+  static scopeId(value: string): string {
     let first = 2166136261;
     let second = 5381;
     for (let index = 0; index < value.length; index++) {
@@ -312,6 +316,58 @@ export class NativeTranscriptCache {
     return Math.max(0, total);
   }
 
+  /** Compact cache descriptors for the global LRU coordinator. */
+  static async storageCandidates(context: common.UIAbilityContext): Promise<NativeStorageCandidate[]> {
+    await NativeTranscriptCache.writes.catch((): void => {});
+    const store = await NativeTranscriptCache.database(context);
+    const rows = await store.querySql(
+      `SELECT scope_id,session_id,bytes,updated_at FROM transcript_manifest
+       UNION ALL
+       SELECT c.scope_id,c.session_id,c.bytes,c.updated_at FROM transcript_cache c
+       WHERE NOT EXISTS (
+         SELECT 1 FROM transcript_manifest m
+         WHERE m.scope_id=c.scope_id AND m.session_id=c.session_id
+       )
+       ORDER BY 4 ASC`
+    );
+    const values: NativeStorageCandidate[] = [];
+    try {
+      while (rows.goToNextRow()) {
+        values.push(new NativeStorageCandidate(
+          NativeStorageOwner.transcript,
+          rows.getString(0), rows.getString(1), 'session', rows.getLong(2), rows.getLong(3)));
+      }
+    } finally {
+      rows.close();
+    }
+    return values;
+  }
+
+  static evictStorageCandidate(context: common.UIAbilityContext,
+    candidate: NativeStorageCandidate): Promise<void> {
+    const operation = NativeTranscriptCache.writes.catch((): void => {}).then(async (): Promise<void> => {
+      const store = await NativeTranscriptCache.database(context);
+      store.beginTransaction();
+      try {
+        await store.executeSql(
+          'DELETE FROM transcript_chunk WHERE scope_id=? AND session_id=?',
+          [candidate.scopeId, candidate.sessionId]);
+        await store.executeSql(
+          'DELETE FROM transcript_manifest WHERE scope_id=? AND session_id=?',
+          [candidate.scopeId, candidate.sessionId]);
+        await store.executeSql(
+          'DELETE FROM transcript_cache WHERE scope_id=? AND session_id=?',
+          [candidate.scopeId, candidate.sessionId]);
+        store.commit();
+      } catch (error) {
+        store.rollBack();
+        throw error as Error;
+      }
+    });
+    NativeTranscriptCache.writes = operation;
+    return operation;
+  }
+
   static async saveRoute(context: common.UIAbilityContext, scope: string, sessionId: string): Promise<void> {
     const scopeId = NativeTranscriptCache.scopeId(scope);
     const operation = NativeTranscriptCache.writes.catch((): void => {}).then(async (): Promise<void> => {
@@ -344,7 +400,7 @@ export class NativeTranscriptCache {
 
   static trimToQuota(context: common.UIAbilityContext, scope: string,
     activeSessionId: string, protectedSessionIds: string[] = [],
-    quota: number = 512 * 1024 * 1024): Promise<void> {
+    quota: number = 4 * 1024 * 1024 * 1024): Promise<void> {
     const scopeId = NativeTranscriptCache.scopeId(scope);
     const protectedIds: Set<string> = new Set<string>(protectedSessionIds);
     const operation = NativeTranscriptCache.writes.catch((): void => {}).then(async (): Promise<void> => {

@@ -6,6 +6,7 @@ import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { NativeHarnessClient } from '../services/NativeHarnessClient';
 import { NativeImageAttachment } from '../services/NativeSessionModel';
 import { NativeAttachmentCache } from '../services/NativeAttachmentCache';
+import { NativeStorageManager } from '../services/NativeStorageManager';
 import { NativeImageZoom, NativeImageZoomTarget } from '../services/NativeImageZoom';
 import { NativeMotion } from '../services/NativeMotion';
 import { DSHIcon } from './DSHIcon';
@@ -84,6 +85,8 @@ export struct NativeImageLightbox {
         bytes = new util.Base64Helper().decodeSync(response.data);
         await NativeAttachmentCache.save(this.context, this.client.cacheKey(),
           this.sessionId, this.attachment, bytes).catch((): void => {});
+        NativeStorageManager.enforceDefaultLimit(this.context, this.client.cacheKey(),
+          this.sessionId).catch((): void => {});
       }
       this.bytes = bytes;
       source = image.createImageSource(bytes.buffer as ArrayBuffer);

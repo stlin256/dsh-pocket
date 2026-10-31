@@ -147,6 +147,14 @@ or real transcript content in source, tests, docs, logs or commits.
   [2026-11-01-pdf-html-preview.md](docs/specs/2026-11-01-pdf-html-preview.md)
 - Rendering, navigation and startup E2E:
   [2026-11-01-render-navigation-startup-e2e.md](docs/testing/2026-11-01-render-navigation-startup-e2e.md)
+- Default 5 GiB cache pool requirement:
+  [2026-11-01-default-cache-pool.md](docs/requirements/2026-11-01-default-cache-pool.md)
+- Default cache pool research:
+  [2026-11-01-default-cache-pool.md](docs/research/2026-11-01-default-cache-pool.md)
+- Default cache pool implementation spec:
+  [2026-11-01-default-cache-pool.md](docs/specs/2026-11-01-default-cache-pool.md)
+- Default cache pool E2E:
+  [2026-11-01-default-cache-pool-e2e.md](docs/testing/2026-11-01-default-cache-pool-e2e.md)
 - Continuous history prefetch and split transcript-cache requirement:
   [2026-10-31-history-continuous-prefetch.md](docs/requirements/2026-10-31-history-continuous-prefetch.md)
 - Continuous history prefetch and split transcript-cache implementation spec:

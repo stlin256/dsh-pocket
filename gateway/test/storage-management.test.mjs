@@ -7,12 +7,48 @@ import ts from 'typescript';
 const services = new URL('../../harmony/entry/src/main/ets/services/', import.meta.url);
 const components = new URL('../../harmony/entry/src/main/ets/components/', import.meta.url);
 
+function loadBudget() {
+  const source = readFileSync(new URL('NativeStorageBudget.ets', services), 'utf8');
+  const output = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS }
+  });
+  const module = { exports: {} };
+  vm.runInNewContext(output.outputText, { module, exports: module.exports });
+  return module.exports;
+}
+
 function loadManager(values = {}) {
   const calls = [];
   const workspace = values.workspace || { directory: 200, text: 300, binary: 400 };
+  const budget = loadBudget();
+  const candidates = values.candidates || [
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.transcript,
+      'transcript-scope', 'current', 'session', values.conversation ?? 100, 1),
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.workspaceDirectory,
+      'workspace-scope', 'current', '/a', workspace.directory, 2),
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.workspaceText,
+      'workspace-scope', 'current', '/b', workspace.text, 3),
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.workspaceBinary,
+      'workspace-scope', 'current', '/c', workspace.binary, 4),
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.attachment,
+      'attachment-scope', '', 'image.bin', values.attachments ?? 500, 5),
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.navigation,
+      'navigation-scope', '', 'metadata:navigation-scope', values.navigation ?? 600, 6)
+  ];
   const dependencies = {
+    './NativeStorageBudget': budget,
     './NativeAttachmentCache': {
       NativeAttachmentCache: {
+        scopeId(scope) {
+          return 'attachment-' + scope;
+        },
+        async storageCandidates() {
+          calls.push(['candidates:attachments']);
+          return candidates.filter(value => value.owner === budget.NativeStorageOwner.attachment);
+        },
+        async evictStorageCandidate(_context, candidate) {
+          calls.push(['evict:attachments', candidate.key]);
+        },
         async usageScope(_context, scope) {
           calls.push(['usage:attachments', scope]);
           return values.attachments ?? 500;
@@ -25,6 +61,16 @@ function loadManager(values = {}) {
     },
     './NativeMetadataCache': {
       NativeMetadataCache: {
+        scopeId(scope) {
+          return 'navigation-' + scope;
+        },
+        storageCandidates() {
+          calls.push(['candidates:navigation']);
+          return candidates.filter(value => value.owner === budget.NativeStorageOwner.navigation);
+        },
+        evictStorageCandidate(_context, candidate) {
+          calls.push(['evict:navigation', candidate.key]);
+        },
         usage(_context, scope) {
           calls.push(['usage:navigation', scope]);
           return values.navigation ?? 600;
@@ -36,6 +82,16 @@ function loadManager(values = {}) {
     },
     './NativeTranscriptCache': {
       NativeTranscriptCache: {
+        scopeId(scope) {
+          return 'transcript-' + scope;
+        },
+        async storageCandidates() {
+          calls.push(['candidates:transcript']);
+          return candidates.filter(value => value.owner === budget.NativeStorageOwner.transcript);
+        },
+        async evictStorageCandidate(_context, candidate) {
+          calls.push(['evict:transcript', candidate.sessionId]);
+        },
         async usageScope(_context, scope) {
           calls.push(['usage:transcript', scope]);
           return values.conversation ?? 100;
@@ -48,7 +104,17 @@ function loadManager(values = {}) {
     },
     './NativeWorkspaceCache': {
       NativeWorkspaceCacheUsage: class {},
+      nativeWorkspaceScopeId(scope) {
+        return 'workspace-' + scope;
+      },
       NativeWorkspaceCache: {
+        async storageCandidates() {
+          calls.push(['candidates:workspace']);
+          return candidates.filter(value => value.owner.startsWith('workspace-'));
+        },
+        async evictStorageCandidate(_context, candidate) {
+          calls.push(['evict:workspace', candidate.key]);
+        },
         async usageScope(_context, scope) {
           calls.push(['usage:workspace', scope]);
           return workspace;
@@ -98,18 +164,24 @@ test('storage usage is a complete current-scope aggregate', async () => {
     fileContent: usage.fileContent,
     imageAttachments: usage.imageAttachments,
     navigation: usage.navigation,
-    total: usage.total
+    total: usage.total,
+    poolTotal: usage.poolTotal,
+    limit: usage.limit
   }, {
     conversation: 100,
     fileBrowser: 200,
     fileContent: 700,
     imageAttachments: 500,
     navigation: 600,
-    total: 2100
+    total: 2100,
+    poolTotal: 2100,
+    limit: 5 * 1024 * 1024 * 1024
   });
-  assert.ok(calls.every(call => call[1] === 'scope-current'));
-  assert.deepEqual(calls.map(call => call[0]),
+  assert.ok(calls.filter(call => call[0].startsWith('usage:')).every(call => call[1] === 'scope-current'));
+  assert.deepEqual(calls.filter(call => call[0].startsWith('usage:')).map(call => call[0]),
     ['usage:transcript', 'usage:workspace', 'usage:attachments', 'usage:navigation']);
+  assert.deepEqual(calls.filter(call => call[0].startsWith('candidates:')).map(call => call[0]),
+    ['candidates:transcript', 'candidates:workspace', 'candidates:attachments', 'candidates:navigation']);
 });
 
 test('clear continues through every cache owner and reports partial failure', async () => {
@@ -135,7 +207,62 @@ test('Settings exposes confirmed red storage clearing without success feedback',
   assert.match(settings, /nativeFormatStorageBytes\(this\.storageBreakdownValue\(kind\)\)/);
   assert.match(settings, /storageBreakdownRow\('对话内容', 'conversation'\)/);
   assert.match(settings, /storageBreakdownRow\('文件浏览', 'fileBrowser'\)/);
+  assert.match(settings, /Text\('缓存池'\)/);
+  assert.match(settings, /nativeFormatStorageBytes\(this\.storageUsage\.limit\)/);
+  assert.match(settings, /nativeFormatStorageBytes\(this\.storageUsage\.poolTotal\)/);
   assert.doesNotMatch(settings, /Storage[^\n]*success|缓存已清空|showToast\([\s\S]{0,80}清空/);
+});
+
+test('default pool is exactly 5 GiB and LRU eviction protects active work when possible', () => {
+  const budget = loadBudget();
+  const gib = 1024 * 1024 * 1024;
+  assert.equal(budget.NATIVE_DEFAULT_CACHE_LIMIT_BYTES, 5 * gib);
+  const exact = [
+    new budget.NativeStorageCandidate('transcript', 'a', 'active', 'a', 5 * gib, 20)
+  ];
+  assert.equal(budget.nativeStorageEvictionPlan(exact, 5 * gib).length, 0,
+    'exactly 5 GiB is allowed');
+
+  const old = new budget.NativeStorageCandidate('workspace-binary', 'b', 'old', '/old.pdf', 2 * gib, 10);
+  const active = new budget.NativeStorageCandidate('transcript', 'a', 'active', 'a', 4 * gib, 20);
+  active.protectedEntry = true;
+  const remaining = new budget.NativeStorageCandidate('attachment', 'c', '', 'image.bin', 1024, 30);
+  const plan = budget.nativeStorageEvictionPlan([active, old, remaining], 5 * gib);
+  assert.deepEqual(Array.from(plan, value => value.key), ['/old.pdf'],
+    'unprotected entries are removed oldest first and active work remains');
+
+  const protectedOnly = [
+    new budget.NativeStorageCandidate('transcript', 'a', 'active', 'a', 4 * gib, 20),
+    new budget.NativeStorageCandidate('transcript', 'b', 'protected', 'b', 2 * gib, 10)
+  ];
+  protectedOnly.forEach(value => { value.protectedEntry = true; });
+  assert.deepEqual(Array.from(budget.nativeStorageEvictionPlan(protectedOnly, 5 * gib), value => value.key),
+    ['b'], 'protected entries are a hard-limit fallback in LRU order');
+});
+
+test('global coordinator evicts compact candidates across cache owners', async () => {
+  const budget = loadBudget();
+  const gib = 1024 * 1024 * 1024;
+  const candidates = [
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.transcript,
+      'transcript-scope-current', 'current', 'active', 3 * gib, 20),
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.workspaceBinary,
+      'workspace-scope-current', 'current', '/current.pdf', 1024, 21),
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.workspaceBinary,
+      'workspace-scope-old', 'old', '/old.pdf', 2 * gib, 10),
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.attachment,
+      'attachment-scope-old', '', 'old-image.bin', gib, 11),
+    new budget.NativeStorageCandidate(budget.NativeStorageOwner.attachment,
+      'attachment-scope-current', '', 'current-image.bin', gib, 12)
+  ];
+  const { exports, calls } = loadManager({ candidates });
+  const after = await exports.NativeStorageManager.enforceDefaultLimit(
+    {}, 'scope-current', 'current', [], true);
+  assert.equal(after, 4 * gib + 1024);
+  assert.deepEqual(calls.filter(call => call[0] === 'evict:workspace').map(call => call[1]),
+    ['/old.pdf']);
+  assert.deepEqual(calls.filter(call => call[0] === 'evict:attachments').map(call => call[1]),
+    ['old-image.bin']);
 });
 
 test('cache owners expose non-mutating usage accounting', () => {

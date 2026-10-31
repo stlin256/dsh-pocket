@@ -911,15 +911,18 @@ export struct NativeSettings {
         Column({ space: 10 }) {
           Row({ space: 12 }) {
             Column({ space: 5 }) {
-              Text('缓存占用').fontSize(12).fontColor(this.dark ? '#85888D' : '#777B81')
-              if (this.storageLoading && this.storageUsage.total === 0) {
+              Text('缓存池').fontSize(12).fontColor(this.dark ? '#85888D' : '#777B81')
+              if (this.storageLoading && this.storageUsage.poolTotal === 0) {
                 LoadingProgress().width(20).height(20).color(this.dark ? '#A9C6FF' : '#315DCA')
               } else {
-                Text(nativeFormatStorageBytes(this.storageUsage.total)).fontSize(28)
+                Text(nativeFormatStorageBytes(this.storageUsage.poolTotal)).fontSize(28)
                   .fontWeight(FontWeight.Medium).fontColor(this.dark ? '#F9FAFB' : '#17181B')
               }
+              Text('上限 ' + nativeFormatStorageBytes(this.storageUsage.limit) +
+                ' · 当前账户 ' + nativeFormatStorageBytes(this.storageUsage.total))
+                .fontSize(11).fontColor(this.dark ? '#85888D' : '#777B81')
             }.layoutWeight(1).alignItems(HorizontalAlign.Start)
-            if (this.storageLoading && this.storageUsage.total > 0) {
+            if (this.storageLoading && this.storageUsage.poolTotal > 0) {
               LoadingProgress().width(18).height(18).color(this.dark ? '#85888D' : '#777B81')
             }
             DSHIcon({ glyph: 'archive-outline', glyphSize: 22,

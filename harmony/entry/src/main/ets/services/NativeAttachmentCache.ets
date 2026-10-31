@@ -2,11 +2,15 @@ import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { NativeImageAttachment } from './NativeSessionModel';
+import {
+  NativeStorageCandidate,
+  NativeStorageOwner
+} from './NativeStorageBudget';
 
 /** App-private raster cache keyed by the one-way login scope and attachment identity. */
 export class NativeAttachmentCache {
   private static readonly maxBytes: number = 32 * 1024 * 1024;
-  private static readonly scopeQuota: number = 256 * 1024 * 1024;
+  private static readonly scopeQuota: number = 2 * 1024 * 1024 * 1024;
 
   private static hash(value: string): string {
     let result = 2166136261;
@@ -15,6 +19,10 @@ export class NativeAttachmentCache {
       result = Math.imul(result, 16777619);
     }
     return (result >>> 0).toString(16);
+  }
+
+  static scopeId(scope: string): string {
+    return NativeAttachmentCache.hash(scope);
   }
 
   private static directory(context: common.UIAbilityContext): string {
@@ -116,6 +124,39 @@ export class NativeAttachmentCache {
       }
     } catch (_) {}
     return Math.max(0, total);
+  }
+
+  /** Compact file descriptors for the global LRU coordinator. */
+  static async storageCandidates(context: common.UIAbilityContext): Promise<NativeStorageCandidate[]> {
+    const directory = NativeAttachmentCache.directory(context);
+    const values: NativeStorageCandidate[] = [];
+    try {
+      for (const name of fileIo.listFileSync(directory)) {
+        if (!name.endsWith('.bin')) continue;
+        const firstSeparator = name.indexOf('-');
+        if (firstSeparator <= 0) continue;
+        try {
+          const stat = fileIo.statSync(directory + '/' + name);
+          const bytes = Number(stat.size);
+          if (!Number.isFinite(bytes) || bytes <= 0) continue;
+          const modified = Number(stat.mtime);
+          const updatedAt = Number.isFinite(modified) ?
+            modified > 0 && modified < 100000000000 ? modified * 1000 : modified : 0;
+          values.push(new NativeStorageCandidate(NativeStorageOwner.attachment,
+            name.slice(0, firstSeparator), '', name, bytes, updatedAt));
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return values;
+  }
+
+  static async evictStorageCandidate(context: common.UIAbilityContext,
+    candidate: NativeStorageCandidate): Promise<void> {
+    if (candidate.owner !== NativeStorageOwner.attachment || !candidate.key) return;
+    try {
+      const absolute = NativeAttachmentCache.directory(context) + '/' + candidate.key;
+      if (fileIo.accessSync(absolute)) fileIo.unlinkSync(absolute);
+    } catch (_) {}
   }
 
   private static async trimScope(context: common.UIAbilityContext, scope: string): Promise<void> {
