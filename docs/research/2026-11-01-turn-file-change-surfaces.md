@@ -44,16 +44,29 @@ path, deduplicates repeated paths and accumulates a stable summary.
 
 ## Plugin assessment
 
-No DSH plugin change is required for this feature:
+The official stopped-turn summary requires a narrow gateway bridge:
 
-- The Harness journal already exposes explicit mutation arguments and results.
-- The gateway already retains the fields needed by `NativeDiff.ets`.
-- `turn/end` already marks the live/final boundary and the current client cache
-  already persists paired rows.
+- Upstream appends a log-only `workspace/changes { turn }` event and keeps the
+  actual summary on the Host, addressed by that event's sequence.
+- The authenticated routes are `GET /api/changes.summary?sessionId=&seq=` and
+  `GET /api/changes.diff?sessionId=&seq=&index=`.
+- The summary includes Git and command-driven changes that are absent from
+  individual tool arguments, plus complete totals. Its public projection omits
+  the Host cwd and snapshot ids.
+- The native client authenticates to the DSH Harmony gateway, not directly to
+  the Host cookie. The gateway therefore adds a read-only
+  `/pocket/api/native/changes/summary` bridge and validates the JSON shape
+  before forwarding the public fields.
 
-Adding another plugin event would duplicate the authoritative journal, enlarge
-the wire payload and create reconciliation risk. File contents remain fetched
-on demand by the existing authenticated workspace operation.
+The running pill remains a local projection of successfully settled explicit
+`write`/`edit`/`apply_patch`/mutating `str_replace_editor` results because DSH
+does not publish a live per-turn Git summary. The completed card replaces that
+fallback with the official summary when available. A 404 or unsupported route
+keeps the tool projection, so older compatible Hosts remain usable.
+
+No additional upstream session event or command-driven journal payload is
+needed. File rows continue to open through the existing read-only workspace
+file operation.
 
 ## Projection semantics
 
@@ -86,9 +99,10 @@ composer
 safe-area inset
 ```
 
-Only the composer dock consumes layout height. The return control and the live
-pill remain overlays/flexible transient controls. The dock surface can extend
-to the full window width while its content keeps the existing 12vp reading
-inset. API 26 material is a progressive enhancement; API 23 uses the theme
-surface.
+Only the natural bottom stack consumes layout height. The live pill, attachment
+strip, composer and safe-area inset form that stack. The return control remains
+an independent overlay immediately above it and does not add a permanent
+spacer. The dock surface extends to the full window width while its content
+keeps the existing 12vp reading inset. API 26 material is a progressive
+enhancement; API 23 uses the theme surface.
 

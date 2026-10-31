@@ -7,9 +7,10 @@ without a physical HarmonyOS device.
 
 Automated evidence in this change:
 
-- Gateway model suite: 128 tests passed, including turn-change aggregation and
-  source contracts for the final card, live pill, reusable bottom dock,
-  read-only file opening and reduced-motion handling.
+- Gateway suite: 130 tests passed, including the official `changes.summary`
+  bridge, turn-change aggregation and source contracts for the final card,
+  live pill, reusable bottom dock, read-only file opening and reduced-motion
+  handling.
 - `default` Release build: passed.
 - `store` Release build: passed.
 - Device evidence: unavailable for this run; every row remains Pending.
@@ -28,4 +29,6 @@ Automated evidence in this change:
 | TFC-10 | Light/dark and reduced motion | Surfaces, outlines and semantic diff colors remain legible; motion resolves directly | Pending |
 | TFC-11 | API 23 fallback | Full-width opaque bottom surface preserves hierarchy when material is unavailable | Pending |
 | TFC-12 | Session switch/reconnect | No live summary leaks across sessions; final cards survive cached reopen | Pending |
+| TFC-13 | Official final summary | Stopped-turn counts include command and Git-visible changes from `workspace/changes`, while an unavailable route falls back to successful tool diffs | Pending |
+| TFC-14 | Official summary privacy | Native UI receives no Host cwd, snapshot identity, credential or unvalidated summary fields | Pending |
 

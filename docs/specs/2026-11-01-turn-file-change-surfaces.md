@@ -51,18 +51,44 @@ Rules:
 
 The workspace derives and stores:
 
-- `turnChanges`: final summaries keyed by stable `turnKey` for footer cards.
+- `turnChanges`: tool-derived fallback summaries keyed by stable `turnKey`.
+- `officialTurnChanges`: validated stopped-turn summaries keyed by the latest
+  durable `workspace/changes` event sequence.
 - `liveTurnChanges`: the newest summary with `running === true`, exposed only
   when the session is currently running/waiting.
 
-## 2. File preview
+The live projection accepts only a settled successful tool result. Preparing
+and running arguments are intent and may still be denied, interrupted or fail.
+Activity state invalidates live visibility even when tool rows and footer
+identity are unchanged.
+
+## 2. Official stopped-turn summary
+
+The gateway adds a read-only authenticated route:
+
+```text
+GET /pocket/api/native/changes/summary?sessionId=<id>&seq=<eventSeq>
+```
+
+It fetches DSH's `/api/changes.summary` with the Host-held cookie, validates and
+forwards only `turn`, `total`, `added`, `deleted`, and bounded
+`files[{path,display,added,deleted,binary?,oversized?}]`. It never forwards
+`cwd` or snapshot identities.
+
+The client parses loaded journal entries for `workspace/changes`, keeps the
+highest event sequence for each turn, and loads summaries with at most three
+requests in flight. A summary for an obsolete sequence is ignored. Completion
+cards prefer the official summary; an unavailable, malformed or older-Host
+response keeps the successful-tool fallback.
+
+## 3. File preview
 
 `NativeTurnChangesCard` receives an `onOpenFile(path)` callback. The workspace
 resolves paths with the existing `nativeFileTarget(path, workspaceRoot)` rule
 and opens the existing `NativeFileBrowser` in file mode. No new read/write API
 is introduced.
 
-## 3. Final transcript card
+## 4. Final transcript card
 
 Render the card in the existing `turn-footer` ListItem when a summary exists.
 For turns without file changes, keep the existing compact footer row.
@@ -80,7 +106,7 @@ The card:
 - animates expansion with `NativeMotion.disclosure`;
 - uses no undo action and no `查看变更` action.
 
-## 4. Rolling number
+## 5. Rolling number
 
 `NativeRollingNumber` is a local presentational component. On a value change it:
 
@@ -93,7 +119,7 @@ With reduced motion or while backgrounded, the incoming value resolves
 immediately. Accessibility reads the final numeric value, not the transient
 layers.
 
-## 5. Live bottom control
+## 6. Live bottom control
 
 `NativeTurnChangePill`:
 
@@ -105,7 +131,7 @@ layers.
 - is hidden when `liveTurnChanges` is absent, the session is no longer
   running/waiting, or the turn has a footer.
 
-The conversation's bottom area is one natural-height stack:
+The conversation's bottom area is one natural-height reusable dock:
 
 1. full-width dock surface and blur/material;
 2. centered live change pill;
@@ -113,13 +139,14 @@ The conversation's bottom area is one natural-height stack:
 4. composer;
 5. safe-area bottom inset.
 
-The return-to-bottom control remains an independent overlay and is positioned
-above the measured bottom stack. It does not add layout height.
+The return-to-bottom control remains an independent overlay immediately above
+the bottom stack. It does not add layout height and does not overlap the live
+pill, attachments or composer.
 
 API 26 material is used only when `NativeExperience.materialsEnabled()`; API 23
 uses the opaque themed surface.
 
-## 6. Motion
+## 7. Motion
 
 - New live changes: `rowTransition` and numeric roll.
 - Numeric changes: 170ms `FastOutSlowIn`; no loop.
@@ -129,7 +156,7 @@ uses the opaque themed surface.
 - Streaming transcript rows receive no new item entrance animation.
 - All motion resolves to the final state under reduced motion.
 
-## 7. Correctness and performance
+## 8. Correctness and performance
 
 - Aggregate only when the transcript projection changes; do not parse diffs on
   every small streamed text delta unless the paired tool rows changed.
@@ -139,7 +166,7 @@ uses the opaque themed surface.
   ordinary list refreshes.
 - A history prepend preserves card identity through the existing footer ID.
 
-## 8. Tests
+## 9. Tests
 
 Add pure-model tests for:
 
@@ -152,6 +179,11 @@ Add pure-model tests for:
 - final outcome copied from `turn/end`;
 - running summary closed by `turn/end`;
 - malformed diff data inert.
+- preparing, running and failed mutations excluded from live totals;
+- activity-only stop hides the live pill;
+- latest `workspace/changes` sequence selected per turn;
+- official summary validation, hostile-field stripping, bounded request
+  concurrency and fallback behavior.
 
 Add source-contract assertions for:
 
@@ -162,7 +194,7 @@ Add source-contract assertions for:
 - return-to-bottom remains above the measured stack;
 - reduced-motion handling.
 
-## 9. Build and evidence
+## 10. Build and evidence
 
 - Run Gateway model tests.
 - Build `default` and `store` Release HAPs.

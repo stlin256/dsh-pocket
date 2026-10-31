@@ -58,9 +58,13 @@ The live control hides when the turn completes or stops.
   never create counts.
 - Repeated edits to one path form one file entry and aggregate their line
   totals.
-- The existing DSH event stream, native gateway projection and local transcript
-  cache should be sufficient. Plugin changes are acceptable only if a concrete
-  protocol gap is demonstrated.
+- The running counter uses successful explicit tool diffs. The completed card
+  prefers DSH's authoritative `workspace/changes` announcement and
+  `/api/changes.summary` record, which includes command-driven and Git-visible
+  changes the tool-only projection cannot see.
+- The DSH Harmony gateway must bridge that authenticated Host route because the
+  native client holds the gateway session rather than the Host cookie. The
+  bridge exposes no Host cwd, snapshot identity or credential.
 - File preview stays read-only.
 
 ## Verification
