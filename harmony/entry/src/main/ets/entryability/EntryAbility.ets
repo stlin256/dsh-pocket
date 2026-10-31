@@ -3,6 +3,7 @@ import { window } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { WindowAppearance } from '../services/WindowAppearance';
 import { NativeExperience } from '../services/NativeExperience';
+import { NativeUiFixture } from '../services/NativeUiFixture';
 import { accessibility } from '@kit.AccessibilityKit';
 
 export default class EntryAbility extends UIAbility {
@@ -73,15 +74,13 @@ export default class EntryAbility extends UIAbility {
       AppStorage.setOrCreate<boolean>('storeShowcase', true);
     }
     const showcaseScreen = want.parameters?.showcaseScreen;
-    if (typeof showcaseScreen === 'string' &&
-      ['conversation', 'process', 'sidebar', 'browser', 'settings'].includes(showcaseScreen)) {
-      AppStorage.setOrCreate<string>('storeShowcaseScreen', showcaseScreen);
-      AppStorage.setOrCreate<boolean>('storeShowcaseProcessOpen', showcaseScreen === 'process');
-    }
+    AppStorage.setOrCreate<string>('storeShowcaseScreen', NativeUiFixture.screen(showcaseScreen));
+    AppStorage.setOrCreate<boolean>('storeShowcaseProcessOpen',
+      NativeUiFixture.screen(showcaseScreen) === 'process');
+    const showcaseState = want.parameters?.showcaseState;
+    AppStorage.setOrCreate<string>('storeShowcaseState', NativeUiFixture.state(showcaseState));
     const showcaseTheme = want.parameters?.showcaseTheme;
-    if (typeof showcaseTheme === 'string' && ['light', 'dark', 'system'].includes(showcaseTheme)) {
-      AppStorage.setOrCreate<string>('storeShowcaseTheme', showcaseTheme);
-    }
+    AppStorage.setOrCreate<string>('storeShowcaseTheme', NativeUiFixture.theme(showcaseTheme));
     const route = want.parameters?.pocketRoute;
     if (typeof route === 'string' && ['workspace', 'overview', 'settings'].includes(route)) {
       AppStorage.setOrCreate<string>('requestedPocketRoute', route);

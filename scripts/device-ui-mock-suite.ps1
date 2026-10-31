@@ -1,0 +1,96 @@
+param(
+  [string]$DevEcoHome = 'C:\Users\yjzlx\AppData\Local\Programs\Huawei\DevEcoStudio-26.0.0',
+  [string]$Device = '',
+  [string]$OutputDir = '',
+  [ValidateRange(5, 120)]
+  [int]$StartupTimeoutSeconds = 30,
+  [switch]$SkipBuild,
+  [switch]$SkipInstall
+)
+
+$ErrorActionPreference = 'Stop'
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+if (-not $OutputDir) {
+  $OutputDir = Join-Path $repo 'artifacts\device-ui-mock'
+}
+New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+
+$scenarios = @(
+  [pscustomobject]@{ Screen = 'conversation'; State = 'completed'; Theme = 'dark' },
+  [pscustomobject]@{ Screen = 'conversation'; State = 'live-change'; Theme = 'dark' },
+  [pscustomobject]@{ Screen = 'conversation'; State = 'live-change'; Theme = 'light' },
+  [pscustomobject]@{ Screen = 'conversation'; State = 'attachments'; Theme = 'dark' },
+  [pscustomobject]@{ Screen = 'conversation'; State = 'streaming'; Theme = 'light' },
+  [pscustomobject]@{ Screen = 'conversation'; State = 'empty'; Theme = 'dark' },
+  [pscustomobject]@{ Screen = 'conversation'; State = 'long-history'; Theme = 'light' },
+  [pscustomobject]@{ Screen = 'process'; State = 'completed'; Theme = 'dark' },
+  [pscustomobject]@{ Screen = 'sidebar'; State = 'completed'; Theme = 'dark' },
+  [pscustomobject]@{ Screen = 'browser'; State = 'completed'; Theme = 'light' },
+  [pscustomobject]@{ Screen = 'settings'; State = 'completed'; Theme = 'dark' }
+)
+
+$mockScript = Join-Path $PSScriptRoot 'device-ui-mock.ps1'
+$results = [System.Collections.Generic.List[object]]::new()
+$firstRun = $true
+$failedCount = 0
+
+foreach ($scenario in $scenarios) {
+  $startedAt = Get-Date
+  $arguments = @{
+    DevEcoHome = $DevEcoHome
+    Screen = $scenario.Screen
+    State = $scenario.State
+    Theme = $scenario.Theme
+    OutputDir = $OutputDir
+    StartupTimeoutSeconds = $StartupTimeoutSeconds
+  }
+  if ($Device) {
+    $arguments.Device = $Device
+  }
+
+  # Build and install once. Reinstalling between graphical scenarios only
+  # introduces unrelated process-termination noise.
+  if ($SkipBuild -or -not $firstRun) {
+    $arguments.SkipBuild = $true
+  }
+  if ($SkipInstall -or -not $firstRun) {
+    $arguments.SkipInstall = $true
+  }
+
+  $message = ''
+  try {
+    & $mockScript @arguments | Out-Host
+    $result = 'Passed'
+  } catch {
+    $result = 'Failed'
+    $message = $_.Exception.Message
+    $failedCount++
+  }
+
+  $results.Add([pscustomobject]@{
+    screen = $scenario.Screen
+    state = $scenario.State
+    theme = $scenario.Theme
+    result = $result
+    durationSeconds = [math]::Round(((Get-Date) - $startedAt).TotalSeconds, 1)
+    message = $message
+  })
+  $firstRun = $false
+}
+
+$summary = [ordered]@{
+  generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+  device = $Device
+  bundleName = 'io.github.stlin256.dshharmony'
+  scenarios = $results
+}
+$summaryPath = Join-Path $OutputDir 'suite-summary.json'
+$summary |
+  ConvertTo-Json -Depth 5 |
+  Set-Content -LiteralPath $summaryPath -Encoding utf8
+
+$results | Format-Table -AutoSize | Out-Host
+if ($failedCount -gt 0) {
+  throw "$failedCount fixture scenarios failed. See $summaryPath"
+}
+Write-Output "All $($results.Count) fixture scenarios passed. Evidence: $summaryPath"

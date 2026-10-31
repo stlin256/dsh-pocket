@@ -203,6 +203,49 @@ test('semantic motion tokens resolve directly when motion is disabled', () => {
   assert.equal(actions, 6);
 });
 
+test('UI fixture launch parameters are bounded and expose explicit running states', () => {
+  const { NativeUiFixture } = load('NativeUiFixture', {});
+  assert.equal(NativeUiFixture.screen('conversation'), 'conversation');
+  assert.equal(NativeUiFixture.screen('unknown'), 'conversation');
+  assert.equal(NativeUiFixture.state('live-change'), 'live-change');
+  assert.equal(NativeUiFixture.state('attachments'), 'attachments');
+  assert.equal(NativeUiFixture.state('streaming'), 'streaming');
+  assert.equal(NativeUiFixture.state('long-history'), 'long-history');
+  assert.equal(NativeUiFixture.state('private-path'), 'completed');
+  assert.equal(NativeUiFixture.theme('dark'), 'dark');
+  assert.equal(NativeUiFixture.theme('sepia'), 'system');
+
+  const entry = readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/entryability/EntryAbility.ets', import.meta.url), 'utf8');
+  const index = readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+  const showcase = readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/services/StoreShowcaseClient.ets', import.meta.url), 'utf8');
+  assert.match(entry, /storeShowcaseState/);
+  assert.match(entry, /NativeUiFixture\.screen/);
+  assert.match(entry, /NativeUiFixture\.state/);
+  assert.match(index, /if \(AppStorage\.get<boolean>\('storeShowcase'\) === true\)/);
+  assert.match(index, /new StoreShowcaseClient\([\s\S]{0,120}storeShowcaseState/);
+  assert.match(index, /showcaseReduceMotion/);
+  assert.match(index, /showcaseReduceTransparency/);
+  assert.match(index, /command === 'reduceMotion' \|\| command === 'reduceTransparency'/);
+  assert.match(index, /showcaseWidgetDetails/);
+  assert.match(index, /showcaseBackgroundMonitor/);
+  assert.match(index, /command === 'notificationLevels'/);
+  assert.match(index, /showcaseNotifyCompleted/);
+  assert.match(index, /showcaseNotifyApproval/);
+  assert.match(showcase, /showcaseWidgetDetails/);
+  assert.match(showcase, /showcaseBackgroundMonitor/);
+  assert.match(showcase, /showcaseNotifyConnection/);
+  assert.match(showcase, /if \(state === 'live-change'\) return showcaseLiveChangeMessages/);
+  assert.match(showcase, /state === 'attachments'/);
+  assert.match(showcase, /state === 'long-history'/);
+  assert.match(showcase, /if \(state === 'attachments'\) return showcaseLiveChangeMessages/);
+  assert.match(showcase, /completedDiff\.diffs\.push\(completedDocs\)/);
+  assert.match(showcase, /record\.running = this\.fixtureState === 'live-change' \|\|[\s\S]{0,80}attachments/);
+  assert.match(showcase, /this\.attachments\.set\(SHOWCASE_SESSION, showcaseAttachments\(\)\)/);
+});
+
 test('double-tap zoom targets the tapped image point and resets from an enlarged view', () => {
   const { NativeImageZoom } = load('NativeImageZoom', {});
   const focused = NativeImageZoom.doubleTap(1, 100, 300, 400, 600, 400, 600);
@@ -947,7 +990,11 @@ test('turn change card and bottom live control keep compact ownership and motion
   assert.match(workspace, /request\.previewOnly = true/);
   assert.match(workspace, /previewOnly: this\.fileView\.previewOnly/);
   assert.match(workspace, /NativeTurnChangePill\(\{[\s\S]{0,180}liveTurnChanges/);
-  assert.match(workspace, /nativeLiveTurnChange\(rows,[\s\S]{0,180}model\.running/);
+  assert.match(workspace,
+    /private paint\(\): void \{[\s\S]{0,260}this\.running = this\.model\.running;[\s\S]{0,180}this\.renderTranscript\(\)/);
+  assert.match(workspace, /nativeLiveTurnChange\(rows, this\.model\.running \|\| this\.model\.waiting\)/);
+  assert.doesNotMatch(workspace,
+    /nativeLiveTurnChange\(rows,[\s\S]{0,120}this\.running \|\| this\.waiting/);
   assert.match(workspace, /Activity can change without a tool\/footer signature change[\s\S]{0,900}liveTurnChangesVisible = false/);
   assert.match(workspace, /NativeMotion\.animate\(this\.getUIContext\(\), 'micro'[\s\S]{0,180}liveTurnChangesVisible = true/);
   assert.match(workspace, /NativeMotion\.animate\(this\.getUIContext\(\), 'micro'[\s\S]{0,180}liveTurnChangesVisible = false/);
@@ -960,6 +1007,8 @@ test('turn change card and bottom live control keep compact ownership and motion
   assert.match(workspace, /if \(this\.attachments\.length\)[\s\S]{0,260}NativeAttachmentDraft/);
   assert.match(dock, /@Prop elevated: boolean = false/);
   assert.match(dock, /if \(this\.elevated && NativeExperience\.materialsEnabled\(\)\)/);
+  assert.match(dock, /\.width\('100%'\)\.height\(this\.measuredHeight\)/);
+  assert.doesNotMatch(dock, /\.width\('100%'\)\.height\('100%'\)/);
   assert.match(dock, /\.backgroundBlurStyle\(BlurStyle\.Thin\)/);
   assert.match(dock, /\.linearGradientBlur\(18/);
   assert.match(dock, /direction: GradientDirection\.Bottom/);
@@ -1587,9 +1636,9 @@ test('live process and terminal file-card motion contracts stay bounded', () => 
   assert.match(workspace,/frame\.type === 'delta' \? 16 : 0/);
   assert.match(workspace,/nativeWithLiveText\(this\.transcriptBaseRows, this\.model\.streamText\)/);
   assert.match(workspace,/private streamTextPatchDirty: boolean = false/);
-  assert.match(workspace,/frame\.type === 'delta' && frame\.text\.length > 0/);
+  assert.match(workspace,/if \(frame\.type === 'delta'\) \{[\s\S]{0,120}frame\.text\.length > 0/);
   assert.match(workspace,/!forceFull && this\.streamTextPatchDirty \?/);
-  assert.match(workspace,/tailOnlyTextUpdate \? 2 : 0/);
+  assert.match(workspace,/if \(tailOnlyTextUpdate\) \{[\s\S]{0,120}this\.source\.setTail\(visible, 2\)/);
   const titleFrame=workspace.indexOf("if (frame.type === 'title')");
   const modelApply=workspace.indexOf('this.model.apply(frame)',titleFrame);
   assert.ok(titleFrame >= 0 && modelApply > titleFrame);
@@ -2039,7 +2088,7 @@ test('stable transcript sources publish bounded tail updates instead of reloadin
   events.length = 0;
   const streamed = changed.map(row => ({ ...row }));
   streamed[streamed.length - 1].text = 'next token';
-  source.set(streamed, row => row.id, 1);
+  source.setTail(streamed, 1);
   assert.deepEqual(events, ['change:2000']);
 });
 

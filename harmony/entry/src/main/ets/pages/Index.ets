@@ -94,7 +94,8 @@ struct Index {
       this.uiMode = 'native';
       const showcaseTheme = AppStorage.get<string>('storeShowcaseTheme');
       this.nativeThemeMode = showcaseTheme === 'dark' || showcaseTheme === 'light' ? showcaseTheme : 'system';
-      this.nativeClient = new StoreShowcaseClient();
+      this.nativeClient = new StoreShowcaseClient(
+        AppStorage.get<string>('storeShowcaseState') || 'completed');
       this.address = '';
       this.origin = '';
       this.error = '';
@@ -397,6 +398,36 @@ struct Index {
       if (command === 'themeMode') {
         this.nativeThemeMode = value;
         this.applyNativeTheme();
+      }
+      if (command === 'reduceMotion' || command === 'reduceTransparency') {
+        const enabled = value === 'true';
+        const motionKey = command === 'reduceMotion' ? 'showcaseReduceMotion' : 'showcaseReduceTransparency';
+        AppStorage.setOrCreate<boolean>(motionKey, enabled);
+        return JSON.stringify({
+          reduceMotion: AppStorage.get<boolean>('showcaseReduceMotion') === true,
+          reduceTransparency: AppStorage.get<boolean>('showcaseReduceTransparency') === true,
+          themeMode: this.nativeThemeMode
+        });
+      }
+      if (command === 'widgetDetails') {
+        AppStorage.setOrCreate<boolean>('showcaseWidgetDetails', value === 'true');
+        return JSON.stringify({ widgetDetails: value === 'true' });
+      }
+      if (command === 'backgroundMonitor') {
+        AppStorage.setOrCreate<boolean>('showcaseBackgroundMonitor', value === 'true');
+        return JSON.stringify({ backgroundMonitor: value === 'true' });
+      }
+      if (command === 'notificationLevels') {
+        const preferences = JSON.parse(value) as Record<string, Object>;
+        const completed = typeof preferences.completed === 'string' ? preferences.completed as string : 'quiet';
+        const failed = typeof preferences.failed === 'string' ? preferences.failed as string : 'standard';
+        const approval = typeof preferences.approval === 'string' ? preferences.approval as string : 'standard';
+        const connection = typeof preferences.connection === 'string' ? preferences.connection as string : 'off';
+        AppStorage.setOrCreate<string>('showcaseNotifyCompleted', completed);
+        AppStorage.setOrCreate<string>('showcaseNotifyFailed', failed);
+        AppStorage.setOrCreate<string>('showcaseNotifyApproval', approval);
+        AppStorage.setOrCreate<string>('showcaseNotifyConnection', connection);
+        return value;
       }
       if (command === 'nativeCompatibilityActive') return '{}';
       return JSON.stringify({ reduceMotion: false, reduceTransparency: false, themeMode: value });

@@ -19,6 +19,7 @@ import {
   NativeWorkspaceItem,
   NativeWorkspaceSnapshot
 } from './NativeSessionModel';
+import { NativeUiFixture } from './NativeUiFixture';
 import { http } from '@kit.NetworkKit';
 
 const SHOWCASE_SESSION = 'showcase-release';
@@ -31,6 +32,16 @@ DeepSeek Harness 的鸿蒙原生客户端。
 - 分级通知与桌面卡片
 - 亮色、暗色与跟随系统
 `;
+
+class ShowcaseFileDiff {
+  path: string = '';
+  oldText: string = '';
+  newText: string = '';
+}
+
+class ShowcaseDiffPayload {
+  diffs: ShowcaseFileDiff[] = [];
+}
 
 class ShowcaseTodo {
   content: string = '';
@@ -60,6 +71,7 @@ function message(id: string, role: string, seq: number, turn: number, step: numb
   value.role = role;
   value.seq = seq;
   value.turn = turn;
+  value.turnKey = 'turn:' + turn;
   value.step = step;
   value.time = 1761900000 + seq;
   value.text = text;
@@ -116,17 +128,49 @@ function showcaseMessages(): NativeMessage[] {
   rows.push(toolMessage('run-build-check-result', 'run-build-check', 'exec_command',
     '', 'BUILD SUCCESSFUL\nstore: release variant ready', 8, 1, 2, true));
 
+  const completedDiff = new ShowcaseDiffPayload();
+  const completedDock = new ShowcaseFileDiff();
+  completedDock.path = 'harmony/entry/src/main/ets/components/NativeBottomConversationDock.ets';
+  completedDock.oldText = 'height(\'100%\')';
+  completedDock.newText = 'height(measuredHeight)\n// natural dock height\n// transcript owns resize\n// anchored bottom';
+  completedDiff.diffs.push(completedDock);
+  const completedWorkspace = new ShowcaseFileDiff();
+  completedWorkspace.path = 'harmony/entry/src/main/ets/components/NativeWorkspace.ets';
+  completedWorkspace.oldText = 'renderTranscript();\nrunning = model.running;';
+  completedWorkspace.newText = 'running = model.running;\nrenderTranscript();\n' +
+    'const live = running || waiting;\n// hide settled controls\n// keep one activity owner';
+  completedDiff.diffs.push(completedWorkspace);
+  const completedFixture = new ShowcaseFileDiff();
+  completedFixture.path = 'harmony/entry/src/main/ets/services/NativeUiFixture.ets';
+  completedFixture.oldText = '';
+  completedFixture.newText = 'export class NativeUiFixture {\n' +
+    '  static screen(value: Object): string { return \'conversation\'; }\n' +
+    '  static state(value: Object): string { return \'completed\'; }\n' +
+    '  static theme(value: Object): string { return \'system\'; }\n}\n';
+  completedDiff.diffs.push(completedFixture);
+  const completedDocs = new ShowcaseFileDiff();
+  completedDocs.path = 'docs/testing/2026-11-01-device-ui-mock-e2e.md';
+  completedDocs.oldText = '';
+  completedDocs.newText = '# Device UI Mock and Bottom Dock E2E\n\n' +
+    'Fixture screenshots and ArkUI bounds are captured through HDC.\n\n' +
+    'No private host, account or transcript content is used.\n';
+  completedDiff.diffs.push(completedDocs);
+  rows.push(toolMessage('edit-release-start', 'release-files-edit', 'edit',
+    JSON.stringify(completedDiff), '', 9, 1, 2));
+  rows.push(toolMessage('edit-release-result', 'release-files-edit', 'edit',
+    '', '', 10, 1, 2, true));
+
   rows.push(toolMessage('plan-refresh-start', 'release-plan-refresh', 'todo_write',
     showcasePlan([
       showcaseTodo('核对 Release 变体', 'completed'),
       showcaseTodo('构建商店版本', 'completed'),
       showcaseTodo('整理商店素材', 'pending'),
       showcaseTodo('检查隐私与账户入口', 'in_progress')
-    ]), '', 9, 1, 2));
+    ]), '', 11, 1, 2));
   rows.push(toolMessage('plan-refresh-result', 'release-plan-refresh', 'todo_write',
-    '', '', 10, 1, 2, true));
+    '', '', 12, 1, 2, true));
 
-  const assistant = message('assistant-release', 'assistant', 11, 1, 3, '');
+  const assistant = message('assistant-release', 'assistant', 13, 1, 3, '');
   assistant.text = '发布检查完成。当前商店版本已满足构建与功能隔离要求。';
   assistant.blocks = [
     textBlock('heading', '发布检查完成'),
@@ -138,16 +182,97 @@ function showcaseMessages(): NativeMessage[] {
   ];
   rows.push(assistant);
 
-  const end = message('turn-release-end', 'turn', 12, 1, 3, '');
+  const end = message('turn-release-end', 'turn', 14, 1, 3, '');
   end.eventType = 'turn/end';
   end.outcome = 'completed';
   rows.push(end);
   return rows;
 }
 
-function showcaseSessions(): NativeSession[] {
+function showcaseLiveChangeMessages(): NativeMessage[] {
+  const rows: NativeMessage[] = [];
+  rows.push(message('user-live-change', 'user', 1, 7, 1,
+    '检查底部 Dock 在任务运行时的布局，并修复遮挡问题。'));
+  const reasoning = message('reason-live-change', 'reasoning', 2, 7, 2,
+    '先核对自然高度与安全区，再验证实时文件变更控件。');
+  reasoning.reasoning = reasoning.text;
+  reasoning.text = '';
+  rows.push(reasoning);
+  const fileDiff = new ShowcaseFileDiff();
+  fileDiff.path = 'harmony/entry/src/main/ets/components/NativeBottomConversationDock.ets';
+  fileDiff.oldText = 'Stack({ alignContent: Alignment.Bottom }) {';
+  fileDiff.newText = 'Stack({ alignContent: Alignment.Bottom }) {\n' +
+    '  // Keep one natural-height owner for the complete bottom stack.\n' +
+    '  // The transcript absorbs live-control and attachment height changes.\n' +
+    '  // Composer actions remain inside the measured safe area.\n' +
+    '  // The bottom dock never uses a fixed or negative vertical offset.';
+  const payload = new ShowcaseDiffPayload();
+  payload.diffs.push(fileDiff);
+  rows.push(toolMessage('edit-live-change-start', 'dock-layout-edit', 'edit',
+    JSON.stringify(payload), '', 3, 7, 2));
+  rows.push(toolMessage('edit-live-change-result', 'dock-layout-edit', 'edit',
+    '', '', 4, 7, 2, true));
+  return rows;
+}
+
+function showcaseStreamingMessages(): NativeMessage[] {
+  const rows: NativeMessage[] = [];
+  rows.push(message('user-streaming', 'user', 1, 8, 1,
+    '请检查流式输出、标题更新和工作过程的显示。'));
+  rows.push(toolMessage('read-streaming', 'stream-read', 'read',
+    '{"path":"harmony/entry/src/main/ets/components/NativeWorkspace.ets"}',
+    '已读取 1 个文件：NativeWorkspace.ets', 2, 8, 2, true));
+  return rows;
+}
+
+function showcaseLongHistoryMessages(): NativeMessage[] {
+  const rows: NativeMessage[] = [];
+  for (let index = 0; index < 40; index++) {
+    const seq = index * 2 + 1;
+    rows.push(message('history-user-' + index, 'user', seq,
+      Math.floor(index / 2) + 1, 1,
+      '检查第 ' + (index + 1) + ' 组历史记录是否能够连续滚动和预取。'));
+    rows.push(message('history-assistant-' + index, 'assistant', seq + 1,
+      Math.floor(index / 2) + 1, 2,
+      '第 ' + (index + 1) + ' 组记录已加载，内容保持稳定。'));
+  }
+  return rows;
+}
+
+function showcaseMessagesFor(state: string): NativeMessage[] {
+  if (state === 'live-change') return showcaseLiveChangeMessages();
+  if (state === 'streaming') return showcaseStreamingMessages();
+  if (state === 'empty') return [];
+  if (state === 'long-history') return showcaseLongHistoryMessages();
+  if (state === 'attachments') return showcaseLiveChangeMessages();
+  return showcaseMessages();
+}
+
+function showcaseAttachments(): NativeAttachmentDraft[] {
+  const rows: NativeAttachmentDraft[] = [];
+  ['NativeWorkspace.ets', 'NativeBottomConversationDock.ets'].forEach((name: string, index: number): void => {
+    const value = new NativeAttachmentDraft();
+    value.id = 'showcase-attachment-' + index;
+    value.kind = 'file';
+    value.name = name;
+    value.mediaType = 'text/plain';
+    value.status = 'ready';
+    value.receiptId = 'showcase-receipt-' + index;
+    value.bytes = 1024;
+    rows.push(value);
+  });
+  return rows;
+}
+
+function showcaseSessions(state: string = 'completed'): NativeSession[] {
+  const firstTitle = state === 'live-change' ? '底部 Dock 运行态' :
+    state === 'streaming' ? '流式输出与标题更新' :
+    state === 'empty' ? '空运行态' :
+    state === 'long-history' ? '长会话与连续预取' :
+    state === 'attachments' ? '附件与实时变更 Dock' :
+    '发布准备与商店检查';
   const definitions: string[][] = [
-    [SHOWCASE_SESSION, '发布准备与商店检查', 'workspace-mobile', 'false'],
+    [SHOWCASE_SESSION, firstTitle, 'workspace-mobile', 'false'],
     ['showcase-files', '工作区文件预览与下载', 'workspace-mobile', 'false'],
     ['showcase-passkey', 'Passkey 登录与远程连接', 'workspace-gateway', 'false'],
     ['showcase-notify', '分级通知与桌面卡片', 'workspace-mobile', 'false'],
@@ -160,6 +285,9 @@ function showcaseSessions(): NativeSession[] {
     value.title = row[1];
     value.cwd = row[2];
     value.blank = row[3] === 'true';
+    value.running = (state === 'live-change' || state === 'attachments' ||
+      state === 'streaming' || state === 'empty') &&
+      row[0] === SHOWCASE_SESSION;
     value.updatedAt = 1761900000000 - definitions.findIndex((item: string[]) => item[0] === row[0]) * 60000;
     return value;
   });
@@ -183,15 +311,22 @@ function showcaseWorkspaces(): NativeWorkspaceSnapshot {
   return value;
 }
 
-function showcaseFrame(): NativeFrame {
+function showcaseFrame(state: string = 'completed'): NativeFrame {
   const frame = new NativeFrame();
   frame.type = 'snapshot';
-  frame.messages = showcaseMessages();
-  frame.cursor = 12;
+  frame.messages = showcaseMessagesFor(state);
+  frame.cursor = state === 'long-history' ? 80 :
+    state === 'live-change' || state === 'attachments' ? 4 :
+    state === 'streaming' ? 2 : state === 'empty' ? 0 : 14;
   frame.beforeSeq = 0;
   frame.hasMore = false;
-  frame.running = false;
+  frame.running = state === 'live-change' || state === 'attachments' ||
+    state === 'streaming' || state === 'empty';
   frame.waiting = false;
+  frame.text = state === 'streaming' ?
+    '正在输出完整的流式回答，内容会按显示帧更新而不会阻塞底部工具栏。' : '';
+  frame.reasoning = state === 'streaming' ?
+    '先检查传输状态，再确认工作过程与底部 Dock 的布局。' : '';
   return frame;
 }
 
@@ -201,37 +336,53 @@ function showcaseFrame(): NativeFrame {
  */
 export class StoreShowcaseClient extends NativeHarnessClient {
   private paused: boolean = false;
+  private fixtureState: string;
 
-  constructor() {
+  constructor(state: string = 'completed') {
     super('https://showcase.invalid');
+    this.fixtureState = NativeUiFixture.state(state);
     const model = new NativeSessionModel();
     const record = new NativeSessionCacheRecord();
     record.version = 1;
-    record.messages = showcaseMessages();
-    record.cursor = 12;
+    record.messages = showcaseMessagesFor(this.fixtureState);
+    record.cursor = this.fixtureState === 'long-history' ? 80 :
+      this.fixtureState === 'live-change' || this.fixtureState === 'attachments' ? 4 :
+      this.fixtureState === 'streaming' ? 2 : this.fixtureState === 'empty' ? 0 : 14;
     record.hasMore = false;
-    record.running = false;
+    record.running = this.fixtureState === 'live-change' || this.fixtureState === 'attachments' ||
+      this.fixtureState === 'streaming' || this.fixtureState === 'empty';
     record.waiting = false;
+    record.streamText = this.fixtureState === 'streaming' ?
+      '正在输出完整的流式回答，内容会按显示帧更新而不会阻塞底部工具栏。' : '';
+    record.streamReasoning = this.fixtureState === 'streaming' ?
+      '先检查传输状态，再确认工作过程与底部 Dock 的布局。' : '';
     model.restore(record);
     this.models.set(SHOWCASE_SESSION, model);
     this.selectedId = SHOWCASE_SESSION;
+    if (this.fixtureState === 'attachments') {
+      this.attachments.set(SHOWCASE_SESSION, showcaseAttachments());
+    }
   }
 
   static initialState(): string {
+    const notifyCompleted = AppStorage.get<string>('showcaseNotifyCompleted') || 'quiet';
+    const notifyFailed = AppStorage.get<string>('showcaseNotifyFailed') || 'standard';
+    const notifyApproval = AppStorage.get<string>('showcaseNotifyApproval') || 'standard';
+    const notifyConnection = AppStorage.get<string>('showcaseNotifyConnection') || 'off';
     return JSON.stringify({
       themeMode: 'system',
-      reduceMotion: false,
-      reduceTransparency: false,
-      widgetDetails: true,
+      reduceMotion: AppStorage.get<boolean>('showcaseReduceMotion') === true,
+      reduceTransparency: AppStorage.get<boolean>('showcaseReduceTransparency') === true,
+      widgetDetails: AppStorage.get<boolean>('showcaseWidgetDetails') !== false,
       supportsPush: false,
       pushEnabled: false,
       notificationsEnabled: true,
       notificationPermissionKnown: true,
-      backgroundMonitor: false,
-      notifyCompleted: 'quiet',
-      notifyFailed: 'standard',
-      notifyApproval: 'standard',
-      notifyConnection: 'off'
+      backgroundMonitor: AppStorage.get<boolean>('showcaseBackgroundMonitor') === true,
+      notifyCompleted,
+      notifyFailed,
+      notifyApproval,
+      notifyConnection
     });
   }
 
@@ -253,7 +404,7 @@ export class StoreShowcaseClient extends NativeHarnessClient {
   async sessions(): Promise<NativeSessionList> {
     const value = new NativeSessionList();
     value.protocol = 2;
-    value.items = showcaseSessions();
+    value.items = showcaseSessions(this.fixtureState);
     return value;
   }
 
@@ -266,12 +417,12 @@ export class StoreShowcaseClient extends NativeHarnessClient {
   }
 
   async page(_id: string, _before: number, _throughSeq: number = -1): Promise<NativeFrame> {
-    return showcaseFrame();
+    return showcaseFrame(this.fixtureState);
   }
 
   async follow(id: string, receive: (frame: NativeFrame) => void, _ended: (reason: string) => void): Promise<void> {
     if (id !== SHOWCASE_SESSION || this.paused) return;
-    receive(showcaseFrame());
+    receive(showcaseFrame(this.fixtureState));
   }
 
   pause(): void {
