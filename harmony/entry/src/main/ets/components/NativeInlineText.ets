@@ -104,6 +104,7 @@ export struct NativeInlineText {
     request.sessionId = this.sessionId;
     request.path = path;
     request.requestId = requestId;
+    request.previewOnly = kind === 'file';
     this.pendingFileRequest = '';
     AppStorage.setOrCreate<string>('nativeFileViewPendingRequest', '');
     AppStorage.setOrCreate<string>('nativeFileViewPayload', JSON.stringify(request));

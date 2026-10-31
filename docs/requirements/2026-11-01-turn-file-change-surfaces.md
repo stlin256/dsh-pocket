@@ -18,9 +18,13 @@ The live control hides when the turn completes or stops.
   expands the list.
 - A file row opens that Host workspace file in the existing read-only native
   file preview.
-- A file opened directly from the completed-turn card returns to the conversation
-  on Back. It must not expose the file's parent directory as an intermediate
-  navigation step.
+- A file opened directly from a conversation file link or the completed-turn
+  card returns to the conversation on Back. It must not expose the file's
+  parent directory as an intermediate navigation step.
+- Nested file links preserve a real preview stack. For example, conversation
+  file A -> linked file B -> Back returns to A, and the next Back returns to the
+  conversation. A file browser flow A -> B -> Back returns to A, then to the
+  containing directory.
 - The card has no undo action and no separate `查看变更` action.
 - The normal completed/stopped/failed state and final-answer copy action remain
   available without creating an extra footer row.

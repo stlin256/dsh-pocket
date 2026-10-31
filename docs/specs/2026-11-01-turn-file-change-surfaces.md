@@ -91,13 +91,18 @@ resolves paths with the existing `nativeFileTarget(path, workspaceRoot)` rule
 and opens the existing `NativeFileBrowser` in file mode. No new read/write API
 is introduced.
 
-Card-originated preview requests set `NativeFileViewRequest.previewOnly = true`.
+Conversation-originated file previews, including inline file links and
+completed-card rows, set `NativeFileViewRequest.previewOnly = true`.
 `NativeFileBrowser` then opens the requested file without seeding its parent
 directory into browser history. Back from that initial preview closes the file
-surface and returns directly to the conversation. Browser-originated file
-requests leave the flag false and continue returning to their directory. If a
-card preview explicitly navigates through the browser controls, each new
-destination still pushes normal in-browser history.
+surface and returns directly to the conversation. Directory links and
+browser-originated file requests leave the flag false and continue returning to
+their directory.
+
+Every subsequent file destination reached from inside a preview is pushed onto
+the existing in-browser history before the preview changes. Thus conversation
+file A -> linked file B -> Back returns to A, then to the conversation. A file
+browser flow A -> B -> Back returns to A, then to the containing directory.
 
 ## 4. Final transcript card
 

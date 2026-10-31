@@ -47,9 +47,17 @@ test('chat inline links publish a surface only after target confirmation', () =>
     inline.indexOf('@Builder', inline.indexOf('private async openFile(')));
   assert.match(openBody, /client\.resolveWorkspaceTarget\(/);
   assert.match(openBody, /if \(!target\.kind \|\| !target\.path\)/);
+  assert.match(inline, /request\.previewOnly = kind === 'file'/);
   assert.match(inline, /message: '文件或文件夹不可用'/);
   assert.doesNotMatch(openBody, /this\.openFileView\('file', path, requestId\);/);
   assert.ok(openBody.indexOf('resolveWorkspaceTarget') < openBody.indexOf('openFileView'));
+
+  const browser = readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/components/NativeFileBrowser.ets', import.meta.url), 'utf8');
+  const pushBody = browser.slice(browser.indexOf('private browserPushChanged()'),
+    browser.indexOf('private child(', browser.indexOf('private browserPushChanged()')));
+  assert.ok(pushBody.indexOf("this.history.push(this.currentEntry().kind, this.currentEntry().path)")
+    < pushBody.indexOf('this.previewPath = next'));
 
   const client = readFileSync(new URL(
     '../../harmony/entry/src/main/ets/services/NativeHarnessClient.ets', import.meta.url), 'utf8');
