@@ -5,6 +5,15 @@ Date: 2026-11-01
 Status: implementation pending initial device run. No row may be marked Passed
 without a physical HarmonyOS device.
 
+Automated evidence in this change:
+
+- Gateway model suite: 128 tests passed, including turn-change aggregation and
+  source contracts for the final card, live pill, reusable bottom dock,
+  read-only file opening and reduced-motion handling.
+- `default` Release build: passed.
+- `store` Release build: passed.
+- Device evidence: unavailable for this run; every row remains Pending.
+
 | ID | Scenario | Expected evidence | Status |
 | --- | --- | --- | --- |
 | TFC-01 | One successful single-file edit | Final turn card shows one file and exact `+/-`; tapping opens the read-only file preview | Pending |

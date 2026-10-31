@@ -181,3 +181,37 @@ export function nativeTurnChangeFor(rows: NativeTurnChangeSummary[],
     summary.turnKey === turnKey);
   return found || null;
 }
+
+function signatureHash(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function appendSignature(row: NativeMessage, parts: string[]): void {
+  if (row.role === 'process') {
+    (row.children || []).forEach((child: NativeMessage): void => appendSignature(child, parts));
+    return;
+  }
+  if (row.role !== 'tool' && row.role !== 'turn-footer') return;
+  parts.push([row.role, row.turnKey, row.callId, row.id, row.toolName, row.phase,
+    row.status, row.outcome, row.footerOutcome, row.failed ? '1' : '0',
+    signatureHash(row.args || ''), signatureHash(row.metaRaw || ''),
+    signatureHash(row.output || ''), signatureHash(row.errorRaw || '')].join(':'));
+}
+
+/**
+ * Cheap change detector for the turn-change projection. Stream text can update
+ * every 40ms while tool rows remain unchanged; callers use this signature to
+ * avoid reparsing the complete diff history on each text delta.
+ */
+export function nativeTurnChangeInputSignature(rows: NativeMessage[],
+  streamTools: NativeMessage[] = []): string {
+  const parts: string[] = [];
+  (rows || []).forEach((row: NativeMessage): void => appendSignature(row, parts));
+  (streamTools || []).forEach((row: NativeMessage): void => appendSignature(row, parts));
+  return parts.join('|');
+}

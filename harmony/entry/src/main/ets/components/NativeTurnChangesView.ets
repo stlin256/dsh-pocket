@@ -81,6 +81,7 @@ export struct NativeTurnChangePill {
     Row({ space: 5 }) {
       DSHIcon({ glyph: 'edit-outline', glyphSize: 13,
         color: this.dark ? '#8AB4FF' : '#3964FE' })
+      Text('正在编辑').fontSize(11).fontColor(this.dark ? '#CFD3D6' : '#61666B')
       NativeRollingNumber({
         value: this.summary.fileCount,
         color: this.dark ? '#F1F1F2' : '#25262A'
@@ -206,7 +207,9 @@ export struct NativeTurnChangesCard {
         }.layoutWeight(1).height(56).padding(0).borderRadius(0)
           .backgroundColor(Color.Transparent)
           .enabled(this.summary.fileCount > 3)
-          .accessibilityText((this.expanded ? '收起' : '展开') + '本次修改的文件')
+          .accessibilityText(this.summary.fileCount > 3 ?
+            (this.expanded ? '收起' : '展开') + '本次修改的文件' :
+            '本次修改了 ' + this.summary.fileCount + ' 个文件')
           .onClick((): void => { this.toggle(); })
         if (this.canCopy) {
           Button({ type: ButtonType.Normal }) {

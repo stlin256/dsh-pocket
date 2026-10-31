@@ -792,6 +792,20 @@ test('live turn file changes require an active unfinished turn and ignore malfor
       id: 'end-live', role: 'turn-footer', turnKey: 'turn:2',
       footerOutcome: 'cancelled', outcome: 'cancelled'
     })])[0].outcome, 'cancelled');
+  const baseSignature = turnChanges.nativeTurnChangeInputSignature(rows, []);
+  const streamedText = Object.assign(new types.NativeMessage(), {
+    id: 'stream-text', role: 'assistant', text: 'streaming prose',
+    turnKey: 'turn:2'
+  });
+  assert.equal(turnChanges.nativeTurnChangeInputSignature(rows.concat([streamedText]), []),
+    baseSignature, 'ordinary text-only stream updates must not reparse turn diffs');
+  const streamingMutation = Object.assign(new types.NativeMessage(), {
+    id: 'stream-mutation', callId: 'stream-mutation', role: 'tool',
+    turnKey: 'turn:2', toolName: 'edit', phase: 'preparing',
+    args: '{"path":"live.ts",'
+  });
+  assert.notEqual(turnChanges.nativeTurnChangeInputSignature(rows, [streamingMutation]),
+    baseSignature, 'streamed mutation arguments must invalidate the aggregate');
 });
 
 test('turn change card and bottom live control keep compact ownership and motion contracts', () => {
@@ -815,10 +829,14 @@ test('turn change card and bottom live control keep compact ownership and motion
   assert.match(workspace, /NativeTurnChangesCard\(\{[\s\S]{0,500}onOpenFile:[\s\S]{0,180}this\.openTurnChangeFile/);
   assert.match(workspace, /NativeTurnChangePill\(\{[\s\S]{0,180}liveTurnChanges/);
   assert.match(workspace, /nativeLiveTurnChange\(rows,[\s\S]{0,180}model\.running/);
-  assert.match(workspace, /Flex\(\{ direction: FlexDirection\.ColumnReverse \}\)/);
   assert.match(workspace, /NativeBottomConversationDock\(\{[\s\S]{0,260}horizontalBleed: 12/);
+  assert.doesNotMatch(workspace, /bottomDockContentHeight|bottomDockOverlayInset|translate\(\{ y: -\(this\.bottomDock/);
+  assert.match(workspace, /if \(this\.liveTurnChangesVisible\)[\s\S]{0,360}NativeTurnChangePill/);
+  assert.match(workspace, /if \(this\.attachments\.length\)[\s\S]{0,260}NativeAttachmentDraft/);
   assert.match(dock, /backgroundBlurStyle\(NativeExperience\.materialsEnabled\(\) \? BlurStyle\.Thin : BlurStyle\.NONE\)/);
   assert.match(dock, /margin\(\{ left: -this\.horizontalBleed, right: -this\.horizontalBleed \}\)/);
+  assert.match(dock, /nativeSafeBottom/);
+  assert.match(dock, /top: 8, bottom: Math\.ceil\(this\.safeBottom \* 1\.2\) \+ 8/);
   assert.match(workspace, /hitTestBehavior\(HitTestMode\.Transparent\)\.zIndex\(6\)/);
   assert.match(workspace, /this\.liveTurnChangesVisible = false/);
 });
@@ -1559,7 +1577,7 @@ test('native transport shares only gateway cookies, disables redirects and never
   assert.equal(delivered,0,'retired socket callbacks must not update the new interface');
 });
 
-test('composer source contract uses intrinsic model width and native image/file actions', () => {
+test('composer source contract uses intrinsic model width, natural dock height and native image/file actions', () => {
   const source=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeWorkspace.ets', import.meta.url),'utf8');
   const clientSource=readFileSync(new URL('../../harmony/entry/src/main/ets/services/NativeHarnessClient.ets', import.meta.url),'utf8');
   assert.match(source,/enableArrow:\s*false/);
@@ -1571,7 +1589,10 @@ test('composer source contract uses intrinsic model width and native image/file 
   assert.match(source,/glyph: 'file-outline'/);
   assert.match(clientSource,/requestInStream\(this\.origin \+ '\/pocket\/api\/native\/upload'/);
   assert.match(source,/this\.attaching = false;[\s\S]{0,180}added\.forEach/);
-  assert.match(source,/translate\(\{ y: -\(this\.composerHeight \+ 8\) \}\)/);
+  assert.match(source,/NativeBottomConversationDock\(\{/);
+  assert.doesNotMatch(source,/translate\(\{ y: -\(this\.composerHeight \+ 8\) \}\)/);
+  assert.match(source,/Column\(\{ space: 8 \}\) \{[\s\S]{0,180}NativeTurnChangePill/);
+  assert.match(source,/if \(this\.attachments\.length\)[\s\S]{0,260}NativeAttachmentDraft/);
   assert.doesNotMatch(source,/if \(this\.attachments\.length\) \{\s*Scroll\(\)/);
   assert.match(source,/const deadline = this\.active \? 15000 : 45000/);
   assert.match(source,/background \? 45000 : 20000/);

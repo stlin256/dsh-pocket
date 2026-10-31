@@ -38,6 +38,7 @@ import { NativeConversationDock } from './NativeConversationDock';
 import {
   nativeLiveTurnChange,
   nativeTurnChangeFor,
+  nativeTurnChangeInputSignature,
   nativeTurnChanges,
   NativeTurnChangeSummary
 } from '../services/NativeTurnChanges';
@@ -175,7 +176,6 @@ export struct NativeWorkspace {
   @State private drawerTranslation: number = 0;
   @State private transcriptViewportHeight: number = 0;
   @State private conversationDockHeight: number = 0;
-  @State private bottomDockContentHeight: number = 0;
   @State private streamText: string = '';
   @State private streamReasoning: string = '';
   @State private footerCopiedId: string = '';
@@ -189,6 +189,7 @@ export struct NativeWorkspace {
   private model: NativeSessionModel = new NativeSessionModel();
   private previousRows: NativeMessage[] = [];
   private taskPlanSignature: string = '';
+  private turnChangesInputSignature: string = '';
   private followTail: boolean = true;
   private mounted: boolean = false;
   private generation: number = 0;
@@ -1387,22 +1388,18 @@ export struct NativeWorkspace {
   }
   private renderTranscript(): void {
     const rows = nativeTranscript(this.model.messages, this.model.running, this.model.streamTools, this.model.streamReasoning, this.model.streamText);
-    this.turnChanges = nativeTurnChanges(rows);
-    const live = nativeLiveTurnChange(rows,
-      this.model.running || this.model.waiting || this.running || this.waiting);
-    if (live) {
-      if (!this.liveTurnChangesVisible) {
-        NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
-          this.liveTurnChanges = live;
-          this.liveTurnChangesVisible = true;
-        });
-      } else {
+    const changeSignature = nativeTurnChangeInputSignature(rows, this.model.streamTools);
+    if (changeSignature !== this.turnChangesInputSignature) {
+      this.turnChangesInputSignature = changeSignature;
+      this.turnChanges = nativeTurnChanges(rows);
+      const live = nativeLiveTurnChange(rows,
+        this.model.running || this.model.waiting || this.running || this.waiting);
+      if (live) {
         this.liveTurnChanges = live;
-      }
-    } else if (this.liveTurnChangesVisible) {
-      NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
+        this.liveTurnChangesVisible = true;
+      } else {
         this.liveTurnChangesVisible = false;
-      });
+      }
     }
     const plan = nativeLatestPlan(rows);
     const planSignature = nativePlanSignature(plan);
@@ -1434,9 +1431,6 @@ export struct NativeWorkspace {
     this.fileView = request;
     this.fileViewOpen = true;
     this.navigationChanged();
-  }
-  private bottomDockOverlayInset(): number {
-    return this.liveTurnChangesVisible ? 42 : 4;
   }
   private copyFooter(text: string, id: string): void {
     if (!text) return;
@@ -2170,8 +2164,7 @@ export struct NativeWorkspace {
                 this.backToBottomPressed = false;
                 this.returnToBottom();
               })
-              .margin({ bottom: this.bottomDockOverlayInset() })
-              .animation(NativeMotion.implicit('micro'))
+              .margin({ bottom: 4 })
               .transition(NativeMotion.rowTransition())
           }.width('100%').height('100%')
             .hitTestBehavior(HitTestMode.Transparent).zIndex(6)
@@ -2199,16 +2192,70 @@ export struct NativeWorkspace {
       }
       NativeBottomConversationDock({
         horizontalBleed: 12,
-        contentInset: 0,
-        onHeight: (height: number): void => {
-          if (height > 0 && height !== this.bottomDockContentHeight) {
-            this.bottomDockContentHeight = height;
-          }
-        }
+        contentInset: 0
       }) {
-      Stack({ alignContent: Alignment.BottomStart }) {
         Column({ space: 8 }) {
-          Flex({ direction: FlexDirection.ColumnReverse }) {
+          if (this.liveTurnChangesVisible) {
+            Row() {
+              NativeTurnChangePill({
+                summary: this.liveTurnChanges,
+                maxWidth: Math.min(360, Math.max(180, this.windowWidth - 64))
+              })
+            }.width('100%').height(30).justifyContent(FlexAlign.Center)
+              .hitTestBehavior(HitTestMode.None)
+              .transition(NativeMotion.rowTransition())
+          }
+          if (this.attachments.length) {
+            Row() {
+              Scroll() {
+                Row({ space: 8 }) {
+                  ForEach(this.attachments, (item: NativeAttachmentDraft) => {
+                    if (item.kind === 'image') {
+                      Stack({ alignContent: Alignment.Center }) {
+                        Image(item.uri).width(46).height(46).borderRadius(11).objectFit(ImageFit.Cover)
+                        if (item.status === 'uploading') {
+                          Stack({ alignContent: Alignment.Center }) {
+                            LoadingProgress().width(16).height(16).color('#FFFFFF')
+                          }.width(46).height(46).borderRadius(11).backgroundColor('#66000000')
+                        } else if (item.status === 'error') {
+                          Text('!').fontSize(15).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
+                            .width(22).height(22).borderRadius(11).textAlign(TextAlign.Center)
+                            .backgroundColor('#C34B4B')
+                        }
+                        Button({ type: ButtonType.Circle }) {
+                          DSHIcon({ glyph: 'close-outline', glyphSize: 9, color: '#FFFFFF' })
+                        }.width(20).height(20).backgroundColor('#99000000').align(Alignment.TopEnd)
+                          .accessibilityText('移除附件').onClick(() => { this.removeAttachment(item.id); })
+                      }.width(48).height(48).borderRadius(12)
+                        .backgroundColor(this.dark ? '#2C2C2E' : '#F1F3F5')
+                        .shadow({ radius: 7, color: this.dark ? '#66000000' : '#22000000', offsetY: 2 })
+                        .accessibilityText(item.status === 'error' ? '图片上传失败，点击重试' : '图片附件')
+                        .onClick(() => { if (item.status === 'error') this.retryAttachment(item); })
+                        .transition(NativeMotion.rowTransition())
+                    } else {
+                      Row({ space: 6 }) {
+                        DSHIcon({ glyph: 'file-outline', glyphSize: 16, color: this.dark ? '#CFD3D6' : '#61666B' })
+                        Text(item.name).fontSize(11).maxLines(1).constraintSize({ maxWidth: 120 })
+                          .textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor(this.dark ? '#F9FAFB' : '#17181B')
+                        if (item.status === 'uploading') LoadingProgress().width(12).height(12)
+                        else if (item.status === 'error') {
+                          Button(item.retryable ? '重试' : '失败', { type: ButtonType.Normal }).height(26).fontSize(10)
+                            .enabled(item.retryable).onClick(() => { this.retryAttachment(item); })
+                        }
+                        Button({ type: ButtonType.Circle }) {
+                          DSHIcon({ glyph: 'close-outline', glyphSize: 10, color: this.dark ? '#93969B' : '#8A8D91' })
+                        }.width(22).height(22).backgroundColor(Color.Transparent)
+                          .accessibilityText('移除附件').onClick(() => { this.removeAttachment(item.id); })
+                      }.height(42).padding({ left: 7, right: 3 }).borderRadius(10)
+                        .backgroundColor(this.dark ? '#2C2C2E' : '#F1F3F5')
+                        .transition(NativeMotion.rowTransition())
+                    }
+                  }, (item: NativeAttachmentDraft) => item.id)
+                }
+              }.scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off).width('100%')
+            }.width('100%').padding({ left: 8, right: 12 })
+              .transition(NativeMotion.rowTransition())
+          }
           Column({ space: 8 }) {
           TextArea({ text: this.draft, placeholder: '发送消息…' }).height(44).enabled(!this.sending)
             .placeholderColor(this.dark ? '#93969B' : '#8A8D91')
@@ -2277,75 +2324,9 @@ export struct NativeWorkspace {
             const height = Number(area.height);
             if (height > 0 && height !== this.composerHeight) this.composerHeight = height;
           })
-        if (this.attachments.length) {
-          Row() {
-            Scroll() {
-              Row({ space: 8 }) {
-                ForEach(this.attachments, (item: NativeAttachmentDraft) => {
-                  if (item.kind === 'image') {
-                    Stack({ alignContent: Alignment.Center }) {
-                      Image(item.uri).width(46).height(46).borderRadius(11).objectFit(ImageFit.Cover)
-                      if (item.status === 'uploading') {
-                        Stack({ alignContent: Alignment.Center }) {
-                          LoadingProgress().width(16).height(16).color('#FFFFFF')
-                        }.width(46).height(46).borderRadius(11).backgroundColor('#66000000')
-                      } else if (item.status === 'error') {
-                        Text('!').fontSize(15).fontWeight(FontWeight.Bold).fontColor('#FFFFFF')
-                          .width(22).height(22).borderRadius(11).textAlign(TextAlign.Center)
-                          .backgroundColor('#C34B4B')
-                      }
-                      Button({ type: ButtonType.Circle }) {
-                        DSHIcon({ glyph: 'close-outline', glyphSize: 9, color: '#FFFFFF' })
-                      }.width(20).height(20).backgroundColor('#99000000').align(Alignment.TopEnd)
-                        .accessibilityText('移除附件').onClick(() => { this.removeAttachment(item.id); })
-                    }.width(48).height(48).borderRadius(12)
-                      .backgroundColor(this.dark ? '#2C2C2E' : '#F1F3F5')
-                      .shadow({ radius: 7, color: this.dark ? '#66000000' : '#22000000', offsetY: 2 })
-                      .accessibilityText(item.status === 'error' ? '图片上传失败，点击重试' : '图片附件')
-                      .onClick(() => { if (item.status === 'error') this.retryAttachment(item); })
-                      .transition(NativeMotion.rowTransition())
-                  } else {
-                    Row({ space: 6 }) {
-                      DSHIcon({ glyph: 'file-outline', glyphSize: 16, color: this.dark ? '#CFD3D6' : '#61666B' })
-                      Text(item.name).fontSize(11).maxLines(1).constraintSize({ maxWidth: 120 })
-                        .textOverflow({ overflow: TextOverflow.Ellipsis }).fontColor(this.dark ? '#F9FAFB' : '#17181B')
-                      if (item.status === 'uploading') LoadingProgress().width(12).height(12)
-                      else if (item.status === 'error') {
-                        Button(item.retryable ? '重试' : '失败', { type: ButtonType.Normal }).height(26).fontSize(10)
-                          .enabled(item.retryable).onClick(() => { this.retryAttachment(item); })
-                      }
-                      Button({ type: ButtonType.Circle }) {
-                        DSHIcon({ glyph: 'close-outline', glyphSize: 10, color: this.dark ? '#93969B' : '#8A8D91' })
-                      }.width(22).height(22).backgroundColor(Color.Transparent)
-                        .accessibilityText('移除附件').onClick(() => { this.removeAttachment(item.id); })
-                    }.height(42).padding({ left: 7, right: 3 }).borderRadius(10)
-                      .backgroundColor(this.dark ? '#2C2C2E' : '#F1F3F5')
-                      .transition(NativeMotion.rowTransition())
-                  }
-                }, (item: NativeAttachmentDraft) => item.id)
-              }
-            }.scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off).width('100%')
-          }.width('100%').padding({ left: 8, right: 12 })
-            .margin({ top: 8 })
-            .transition(NativeMotion.rowTransition())
-        }
-          }.width('100%')
         }.width('100%')
-        if (this.liveTurnChangesVisible) {
-          Row() {
-            NativeTurnChangePill({
-              summary: this.liveTurnChanges,
-              maxWidth: Math.min(360, Math.max(180, this.windowWidth - 64))
-            })
-          }.width('100%').height(30).justifyContent(FlexAlign.Center)
-            .translate({ y: -(this.bottomDockContentHeight + 8) })
-            .hitTestBehavior(HitTestMode.None)
-            .transition(NativeMotion.rowTransition())
-        }
-      }.width('100%').clip(false)
-      }
     }.padding({ left: 12, right: 12, top: this.safeTop + 4,
-      bottom: Math.ceil(this.safeBottom * 1.2) + 8 })
+      bottom: 0 })
       .height('100%').layoutWeight(1)
       .transition(NativeMotion.navigationTransition())
   }

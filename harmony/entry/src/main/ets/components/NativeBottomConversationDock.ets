@@ -9,6 +9,7 @@ export struct NativeBottomConversationDock {
   @BuilderParam content: () => void;
   @StorageLink('nativeDark') private dark: boolean = false;
   @StorageLink('nativeExperienceRevision') private experienceRevision: number = 0;
+  @StorageLink('nativeSafeBottom') private safeBottom: number = 0;
   @Prop horizontalBleed: number = 0;
   @Prop contentInset: number = 12;
   @State private measuredHeight: number = 0;
@@ -24,7 +25,7 @@ export struct NativeBottomConversationDock {
       this.content()
     }.width('100%').margin({ left: -this.horizontalBleed, right: -this.horizontalBleed })
       .padding({ left: this.horizontalBleed + this.contentInset, right: this.horizontalBleed + this.contentInset,
-        top: 8 })
+        top: 8, bottom: Math.ceil(this.safeBottom * 1.2) + 8 })
       .backgroundColor(this.surface())
       .backgroundBlurStyle(NativeExperience.materialsEnabled() ? BlurStyle.Thin : BlurStyle.NONE)
       .onAreaChange((_old: Area, area: Area): void => {
