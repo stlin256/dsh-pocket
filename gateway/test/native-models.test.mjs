@@ -239,6 +239,10 @@ test('navigation polish keeps the drawer, uses incremental browsing and guarded 
   assert.match(browser,/this\.navigating = true/);
   assert.match(browser,/this\.loading && !this\.hasLoaded/);
   assert.match(browser,/再次返回退出文件浏览/);
+  assert.match(browser,/private back\(confirmAtRoot: boolean = false\): void/);
+  assert.match(browser,/if \(!confirmAtRoot\) \{[\s\S]{0,100}this\.onClose\(\)/);
+  assert.match(browser,/private systemBack\(\): void \{\s*this\.back\(true\);/);
+  assert.match(browser,/accessibilityText\('返回'\)\.onClick\(\(\) => \{ this\.back\(false\); \}\)/);
   const diff=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeDiffBlock.ets',
     import.meta.url),'utf8');
   assert.doesNotMatch(diff,/drag-handle-outline/);

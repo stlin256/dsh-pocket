@@ -51,7 +51,7 @@ The existing `nativeBackRevision` remains the one system-back signal.
 `NativeWorkspace.backToSessions` hands control to the mounted browser whenever
 `fileViewOpen && kind === 'browser'`, rather than closing it directly.
 
-`NativeFileBrowser` handles that signal in this order:
+`NativeFileBrowser` handles the system-back signal in this order:
 
 1. If a nested preview is open, close it.
 2. If `navigationPath` is not root, load its parent.
@@ -60,8 +60,10 @@ The existing `nativeBackRevision` remains the one system-back signal.
 4. If root is already armed, call `onClose`.
 
 Every successful navigation and preview close clears the armed state. Direct
-toolbar actions keep their existing behavior: chevron returns one level and the
-close button closes the browser immediately.
+toolbar actions keep their existing behavior: the chevron calls `back(false)`
+so it returns one level and closes immediately at root, while the close button
+calls `onClose()` directly. System back calls `back(true)`, which is the only
+path that arms the two-second root exit confirmation.
 
 ## File operations
 
@@ -92,7 +94,8 @@ disables its built-in state effect; a touch-down state paints the complete
 - Gateway tests continue to verify that root is sent upstream as `.` and nested
   relative request paths are forwarded unchanged.
 - App model/geometry review verifies that only navigation paths drive requests.
-- Device E2E verifies nested Back, root double-Back, remembered nested
-  navigation, directory glyph rendering and sidebar scrollbar placement.
+- Device E2E verifies nested Back, root double-Back, immediate toolbar-root
+  close, remembered nested navigation, directory glyph rendering and sidebar
+  scrollbar placement.
 - Device E2E verifies image, Markdown, SVG and code preview plus row download
   after a directory has been reached through relative navigation.

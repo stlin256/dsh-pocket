@@ -9,6 +9,7 @@ Status: pending device execution.
 | BROWSER-BACK-02 | From a nested directory, use the system back gesture | The browser loads the parent directory and remains open | Pending |
 | BROWSER-BACK-03 | At the workspace root, use the system back gesture once | The browser remains open and shows `再次滑动退出文件浏览` | Pending |
 | BROWSER-BACK-04 | Repeat the root system back gesture within two seconds | The browser closes and the chat remains open | Pending |
+| BROWSER-BACK-05 | At the workspace root, tap the top-left toolbar chevron | The browser closes immediately; no toast or second tap is required | Pending |
 | BROWSER-HISTORY-01 | Enter a nested directory, close the browser, then reopen `文件浏览` | The nested directory reopens and its parent is reachable by system back and toolbar back | Pending |
 | BROWSER-HISTORY-02 | Let the two-second root exit window expire, then use system back once | The browser remains open and arms the exit confirmation again | Pending |
 | BROWSER-ICON-01 | Compare a directory row and regular file row in light and dark mode | The directory uses a folder glyph and the file keeps the document/code glyph, both with correct theme tint | Pending |

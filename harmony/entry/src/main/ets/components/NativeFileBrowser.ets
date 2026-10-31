@@ -172,7 +172,7 @@ export struct NativeFileBrowser {
     this.previewPath = '';
     if (!await this.load(requested)) this.history.pop();
   }
-  private back(): void {
+  private back(confirmAtRoot: boolean = false): void {
     const previous = this.history.pop();
     if (previous) {
       this.rootExitArmedAt = 0;
@@ -182,6 +182,11 @@ export struct NativeFileBrowser {
         this.previewPath = '';
         this.load(previous.path);
       }
+      return;
+    }
+    if (!confirmAtRoot) {
+      this.rootExitArmedAt = 0;
+      this.onClose();
       return;
     }
     const now = Date.now();
@@ -235,7 +240,7 @@ export struct NativeFileBrowser {
     }
   }
   private systemBack(): void {
-    this.back();
+    this.back(true);
   }
   private async download(entry: NativeDirectoryEntry): Promise<void> {
     if (this.downloadingFile || entry.type !== 'file') return;
@@ -299,7 +304,7 @@ export struct NativeFileBrowser {
         DSHIcon({ glyph: 'chevron-left-outline', glyphSize: 17,
           color: this.dark ? '#F9FAFB' : '#17181B' })
       }.width(32).height(32).borderRadius(9).backgroundColor(Color.Transparent)
-        .accessibilityText('返回').onClick(() => { this.back(); })
+        .accessibilityText('返回').onClick(() => { this.back(false); })
       Column({ space: 1 }) {
         Row({ space: 5 }) {
           Text(this.navigationPath || '工作区').fontSize(14).fontWeight(FontWeight.Medium).maxLines(1)

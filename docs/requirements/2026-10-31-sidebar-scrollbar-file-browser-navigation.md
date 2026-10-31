@@ -11,6 +11,10 @@
   - the workspace root requires two back gestures within two seconds to close
     the browser;
   - the first root back gesture shows `再次滑动退出文件浏览`.
+- Toolbar navigation must remain direct: the top-left chevron returns one level
+  and closes immediately when already at the workspace root. The top-right
+  close button also closes immediately. Root exit confirmation applies only to
+  the HarmonyOS system back gesture.
 - Reopening the file browser after visiting a nested directory must preserve a
   navigable workspace-relative path. Returning to the parent must work after
   reopening.
@@ -31,6 +35,8 @@
 - System back in a nested directory never closes the browser.
 - System back at the workspace root never closes the browser on the first
   gesture and closes it on the second gesture within the confirmation window.
+- The top-left toolbar chevron at the workspace root closes the browser on the
+  first tap without a toast or second confirmation.
 - Closing and reopening the browser after nested navigation preserves the
   nested directory and allows a system-back return to its parent.
 - Directory and file glyphs are distinguishable in both light and dark themes.
