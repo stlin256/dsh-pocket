@@ -82,6 +82,7 @@ export struct NativeWorkspace {
   onLocalNotification: (sessionId: string, title: string, state: string) => Promise<void> = async (): Promise<void> => {};
   onCompatibility: () => void = (): void => {};
   onDestination: (destination: string) => void = (): void => {};
+  onWorkspaceReady: () => void = (): void => {};
   @StorageLink('nativeBackRevision') @Watch('backToSessions') private backRevision: number = 0;
   @StorageLink('nativeImagePreviewRevision') @Watch('imagePreviewChanged') private imagePreviewRevision: number = 0;
   @StorageLink('nativeFileViewRevision') @Watch('fileViewChanged') private fileViewRevision: number = 0;
@@ -160,6 +161,7 @@ export struct NativeWorkspace {
   @State private drawerFollowing: boolean = false;
   @State private drawerTranslation: number = 0;
   @State private transcriptViewportHeight: number = 0;
+  @State private conversationDockHeight: number = 0;
   @State private streamText: string = '';
   @State private streamReasoning: string = '';
   @State private footerCopiedId: string = '';
@@ -207,6 +209,23 @@ export struct NativeWorkspace {
   private utilityOpenedAt: number = 0;
   private interactionTimes: Map<string, number> = new Map<string, number>();
   private workspaceRowRects: Map<string, number[]> = new Map<string, number[]>();
+  private workspaceReadyNotified: boolean = false;
+  private workspaceReadyPending: boolean = false;
+
+  private notifyWorkspaceReady(generation: number): void {
+    if (this.workspaceReadyNotified || this.workspaceReadyPending) return;
+    this.workspaceReadyPending = true;
+    this.loading = false;
+    setTimeout((): void => {
+      this.workspaceReadyPending = false;
+      if (this.mounted && generation === this.generation && !this.workspaceReadyNotified) {
+        this.workspaceReadyNotified = true;
+        NativeStorageManager.enforceDefaultLimit(this.context, this.client.cacheKey(),
+          this.selected, Array.from(this.client.drafts.keys()), true).catch((): void => {});
+        this.onWorkspaceReady();
+      }
+    }, 0);
+  }
 
   private preferencesChanged(): void { this.steer = this.client.hostSettings.chat().busyEnter === 'steer'; this.renderTranscript(); }
   private modelCaptionChanged(): void { this.modelCaption = this.client.modelDirectory.caption(this.selected); }
@@ -342,7 +361,6 @@ export struct NativeWorkspace {
     if (cached.sessions.length) {
       this.sessions = cached.sessions;
       if (cached.workspaces) this.workspaces = cached.workspaces;
-      this.loading = false;
       this.sessionsChanged();
       // Paint the remembered conversation from the encrypted cache before the
       // navigation refresh or live socket becomes available.
@@ -359,6 +377,10 @@ export struct NativeWorkspace {
         }
       }
       if (!this.selected) this.openDrawer(false);
+      if (generation === this.generation) {
+        this.loading = false;
+        this.notifyWorkspaceReady(generation);
+      }
     } else this.loading = true;
     this.error = '';
     try {
@@ -397,15 +419,25 @@ export struct NativeWorkspace {
           if (session) this.title = session.title.trim() || '未命名会话';
           if (this.connectionPhase !== 'opening' && this.connectionPhase !== 'syncing' &&
             this.connectionPhase !== 'live') this.follow();
-        } else if (available) this.select(requested);
-        else this.openDrawer(false);
-      } else this.openDrawer(false);
+          this.notifyWorkspaceReady(generation);
+        } else if (available) {
+          this.select(requested);
+          this.notifyWorkspaceReady(generation);
+        } else {
+          this.openDrawer(false);
+          this.notifyWorkspaceReady(generation);
+        }
+      } else {
+        this.openDrawer(false);
+        this.notifyWorkspaceReady(generation);
+      }
     } catch (error) {
       if (!this.sessions.length) this.handleError(error as Error);
       if (!(error instanceof NativeHttpError && error.status === 401)) {
         if (!this.sessions.length) {
           this.connectionPhase = 'retrying';
           this.scheduleReconnect('');
+          this.notifyWorkspaceReady(generation);
         } else {
           this.connectionPhase = this.selected ? 'syncing' : 'idle';
           if (!this.selected) this.openDrawer(false);
@@ -418,7 +450,9 @@ export struct NativeWorkspace {
         }
       }
     }
-    finally { if (this.mounted && generation === this.generation) this.loading = false; }
+    finally {
+      if (this.mounted && generation === this.generation && this.selected) this.loading = false;
+    }
   }
   private preloadMetadata(): void {
     clearTimeout(this.preloadTimer);
@@ -2000,7 +2034,8 @@ export struct NativeWorkspace {
               }.width('100%').alignItems(VerticalAlign.Top) }
             }
           }, (message: NativeMessage) => message.id)
-        }.width('100%').height('100%').cachedCount(6)
+        }.contentStartOffset(this.taskPlan.items.length ? this.conversationDockHeight : 0)
+          .width('100%').height('100%').cachedCount(6)
           .edgeEffect(NativeExperience.reducedMotion() ? EdgeEffect.None : EdgeEffect.Spring)
           .onReachStart(() => {
             if (this.userHasScrolled && this.hasMore && this.connectionPhase === 'live') this.startHistoryDrain(false);
@@ -2034,29 +2069,40 @@ export struct NativeWorkspace {
               NativeTaskDock({ document: this.taskPlan, sessionId: this.selected })
             }
           }.width('100%').zIndex(4)
+            .onAreaChange((_old: Area, area: Area): void => {
+              const height = Number(area.height);
+              if (height > 0 && height !== this.conversationDockHeight) this.conversationDockHeight = height;
+            })
             .transition(NativeMotion.disclosureTransition())
             .animation(NativeMotion.disclosureParam())
         }
         if (this.backToBottomVisible && !this.menuId && !this.utilityOpen &&
           !this.modelPickerOpen && !this.toolsOpen && !this.workspacePickerOpen &&
           !this.showSessions) {
-          Stack({ alignContent: Alignment.BottomEnd }) {
-            Button({ type: ButtonType.Normal }) {
-              Stack({ alignContent: Alignment.Center }) {
-                DSHIcon({ glyph: 'chevron-left-outline', glyphSize: 16,
-                  color: this.dark ? '#F9FAFB' : '#17181B' }).rotate({ angle: -90 })
-                if (this.backToBottomNew) {
-                  Text('').position({ x: 15, y: -15 }).width(6).height(6).borderRadius(6)
-                    .backgroundColor(this.dark ? '#8AB4FF' : '#3964FE')
-                }
-              }.width('100%').height('100%')
-            }.width(44).height(44).padding(0).borderRadius(22).clip(true)
-              .backgroundColor(this.dark ? '#2C2C2E' : '#FFFFFF')
-              .border({ width: 0.5, color: this.dark ? '#4A4B4F' : '#D8DADF' })
-              .shadow({ radius: 10, color: this.dark ? '#66000000' : '#22000000', offsetY: 3 })
-              .margin({ right: 4, bottom: 8 })
-              .accessibilityText(this.backToBottomNew ? '回到底部，有新内容' : '回到底部')
-              .onClick((): void => { this.returnToBottom(); })
+          Stack({ alignContent: Alignment.Bottom }) {
+            Stack({ alignContent: Alignment.Center }) {
+              Stack().width(52).height(52).borderRadius(26)
+                .backgroundColor(this.dark ? '#7A8AB4FF' : '#663964FE')
+                .blur(NativeExperience.reducedTransparency() ? 0 : 14)
+              Button({ type: ButtonType.Normal }) {
+                Stack({ alignContent: Alignment.Center }) {
+                  DSHIcon({ glyph: 'chevron-down-outline', glyphSize: 17,
+                    color: this.dark ? '#F9FAFB' : '#17181B' })
+                  if (this.backToBottomNew) {
+                    Text('').position({ x: 15, y: -15 }).width(6).height(6).borderRadius(6)
+                      .backgroundColor(this.dark ? '#8AB4FF' : '#3964FE')
+                  }
+                }.width('100%').height('100%')
+              }.width(40).height(40).padding(0).borderRadius(20).clip(true)
+                .backgroundColor(NativeExperience.reducedTransparency() ?
+                  this.dark ? '#2C2C2E' : '#FFFFFF' :
+                  this.dark ? '#D92C2C2E' : '#E6FFFFFF')
+                .border({ width: 0.8, color: this.dark ? '#805A5D63' : '#B8C9CDD5' })
+                .shadow({ radius: 8, color: this.dark ? '#55000000' : '#1C000000', offsetY: 2 })
+                .accessibilityText(this.backToBottomNew ? '回到底部，有新内容' : '回到底部')
+                .onClick((): void => { this.returnToBottom(); })
+            }.width(66).height(58)
+              .margin({ bottom: 3 })
               .transition(NativeMotion.rowTransition())
           }.width('100%').height('100%')
             .hitTestBehavior(HitTestMode.Transparent).zIndex(6)

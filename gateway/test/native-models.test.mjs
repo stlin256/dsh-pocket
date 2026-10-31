@@ -753,7 +753,12 @@ test('todo_write projects structured status rows and the newest replacement plan
   const workspaceView=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeWorkspace.ets',
     import.meta.url),'utf8');
   assert.match(workspaceView,/NativeConversationDock\(\) \{[\s\S]{0,100}NativeTaskDock/);
-  assert.match(workspaceView,/Stack\(\{ alignContent: Alignment\.BottomEnd \}\)/);
+  assert.match(workspaceView,/Stack\(\{ alignContent: Alignment\.Bottom \}\)/);
+  assert.match(workspaceView,/contentStartOffset\(this\.taskPlan\.items\.length \? this\.conversationDockHeight : 0\)/);
+  assert.match(workspaceView,/NativeConversationDock\(\) \{[\s\S]{0,260}\.onAreaChange/);
+  assert.match(workspaceView,/glyph: 'chevron-down-outline'/);
+  assert.match(workspaceView,/\.blur\(NativeExperience\.reducedTransparency\(\) \? 0 : 14\)/);
+  assert.match(workspaceView,/\.width\(40\)\.height\(40\)[\s\S]{0,300}#E6FFFFFF/);
   assert.match(workspaceView,/hitTestBehavior\(HitTestMode\.Transparent\)\.zIndex\(6\)/);
   const dockGroup=readFileSync(new URL(
     '../../harmony/entry/src/main/ets/components/NativeConversationDock.ets', import.meta.url),'utf8');
@@ -1472,6 +1477,17 @@ test('workspace history drain autocancels stale work and restarts after live rec
   assert.match(source,/private scheduleReconnect\(id: string\): void \{[\s\S]{0,150}this\.pauseHistoryDrain\(\)/);
   assert.match(source,/await this\.older\(true\)[\s\S]{0,1200}this\.historyRetry\.nextDelay\(\)/);
   assert.match(source,/nativeHistoryPageAdvanced\(historyBefore/);
+});
+
+test('first native navigation gates launch dismissal on restored workspace readiness', () => {
+  const index=readFileSync(new URL('../../harmony/entry/src/main/ets/pages/Index.ets', import.meta.url),'utf8');
+  const workspace=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeWorkspace.ets', import.meta.url),'utf8');
+  assert.match(index,/NativeWorkspace\(\{[\s\S]{0,1800}onWorkspaceReady: \(\): void => \{ this\.finishLaunch\(\); \}/);
+  assert.match(index,/this\.uiMode === 'native' && !this\.authSurface &&[\s\S]{0,120}this\.launchPhase === NativeLaunchPhase\.restoring/);
+  assert.match(index,/this\.uiMode !== 'native' \|\| this\.authSurface[\s\S]{0,80}this\.finishLaunch\(\)/);
+  assert.match(workspace,/onWorkspaceReady: \(\) => void/);
+  assert.match(workspace,/this\.requestedSession \|\|[\s\S]{0,260}NativeTranscriptCache\.loadRoute[\s\S]{0,900}if \(!this\.selected\) this\.openDrawer\(false\)[\s\S]{0,260}this\.notifyWorkspaceReady\(generation\)/);
+  assert.match(workspace,/private notifyWorkspaceReady[\s\S]{0,700}generation === this\.generation[\s\S]{0,500}NativeStorageManager\.enforceDefaultLimit[\s\S]{0,180}this\.onWorkspaceReady\(\)/);
 });
 
 test('encrypted transcript persistence splits large JSON without cutting surrogate pairs', () => {

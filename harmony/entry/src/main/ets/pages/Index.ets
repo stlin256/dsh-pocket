@@ -127,7 +127,7 @@ struct Index {
     try {
       await this.connect(true);
       await this.revealLaunch();
-      this.finishLaunch();
+      if (this.uiMode !== 'native' || this.authSurface) this.finishLaunch();
     } catch (error) {
       await this.revealLaunch();
       this.failLaunch(NativeLaunchFlow.safeMessage(
@@ -161,7 +161,12 @@ struct Index {
       ? NativeLaunchPhase.error : NativeLaunchPhase.login;
     this.launchError = '';
     this.connect(false).then((): void => {
-      this.finishLaunch();
+      if (this.uiMode === 'native' && !this.authSurface) {
+        this.launchPhase = NativeLaunchPhase.restoring;
+        this.applyNativeTheme();
+      } else {
+        this.finishLaunch();
+      }
     }).catch((error: Error): void => {
       this.launchError = NativeLaunchFlow.safeMessage(error, '连接失败');
       this.launchPhase = NativeLaunchFlow.needsLogin(this.launchError)
@@ -371,8 +376,12 @@ struct Index {
     if (this.uiMode === 'native') {
       this.authSurface = false;
       AppStorage.setOrCreate<boolean>('nativeAuthSurface', false);
-      if (this.launchPhase !== NativeLaunchPhase.hidden) this.finishLaunch();
-      else this.applyNativeTheme();
+      if (this.launchPhase === NativeLaunchPhase.entering ||
+        this.launchPhase === NativeLaunchPhase.hidden) {
+        this.launchOpacity = 1;
+        this.launchPhase = NativeLaunchPhase.restoring;
+      }
+      this.applyNativeTheme();
     }
   }
   private async selectMode(mode: string): Promise<void> {
@@ -620,7 +629,9 @@ struct Index {
         }.layoutWeight(1).width('100%')
       } else if (this.ready &&
         (this.launchPhase === NativeLaunchPhase.entering ||
-          this.launchPhase === NativeLaunchPhase.hidden)) {
+          this.launchPhase === NativeLaunchPhase.hidden ||
+          (this.uiMode === 'native' && !this.authSurface &&
+            this.launchPhase === NativeLaunchPhase.restoring))) {
         if (this.uiMode === 'native' && !this.authSurface) {
           NativeWorkspace({ client: this.nativeClient, context: this.context, supportsPush: PushKitAdapter.supported,
             onLogin: (): void => { this.loginSurface(); },
@@ -634,7 +645,8 @@ struct Index {
               }
             },
             onCompatibility: (): void => { this.compatibility(); },
-            onDestination: (destination: string): void => { this.compatibility(destination); } })
+            onDestination: (destination: string): void => { this.compatibility(destination); },
+            onWorkspaceReady: (): void => { this.finishLaunch(); } })
         } else {
           if (this.progress < 100) { Progress({ value: this.progress, total: 100 }).width('100%').color(this.nativeDark ? '#5686FE' : '#4176E6').height(2) }
           Web({ src: this.origin + '/pocket/?mode=' + this.mode, controller: this.controller })

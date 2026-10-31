@@ -45,6 +45,10 @@ export class NativeExperience {
     return AppStorage.get<boolean>('nativeUserReduceMotion') === true || AppStorage.get<boolean>('nativeSystemReduceMotion') === true;
   }
 
+  static reducedTransparency(): boolean {
+    return AppStorage.get<boolean>('nativeReduceTransparency') === true;
+  }
+
   static titleOptions(dark: boolean, _revision: number): NavigationTitleOptions {
     const options: NavigationTitleOptions = { backgroundColor: dark ? '#151517' : '#FFFFFF', barStyle: BarStyle.STANDARD };
     if (deviceInfo.sdkApiVersion >= 26) {
