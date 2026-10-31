@@ -100,6 +100,24 @@ export class NativeAttachmentCache {
     } catch (_) {}
   }
 
+  /** App-private attachment bytes for one authenticated scope. */
+  static async usageScope(context: common.UIAbilityContext, scope: string): Promise<number> {
+    const prefix = NativeAttachmentCache.hash(scope) + '-';
+    const directory = NativeAttachmentCache.directory(context);
+    let total = 0;
+    try {
+      for (const name of fileIo.listFileSync(directory)) {
+        if (!name.startsWith(prefix)) continue;
+        try {
+          const stat = fileIo.statSync(directory + '/' + name);
+          const size = Number(stat.size);
+          if (Number.isFinite(size) && size > 0) total += size;
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return Math.max(0, total);
+  }
+
   private static async trimScope(context: common.UIAbilityContext, scope: string): Promise<void> {
     const prefix = NativeAttachmentCache.hash(scope) + '-';
     const directory = NativeAttachmentCache.directory(context);

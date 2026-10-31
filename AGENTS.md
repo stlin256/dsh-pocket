@@ -159,6 +159,12 @@ or real transcript content in source, tests, docs, logs or commits.
   [2026-11-01-plugin-update-workflow.md](docs/requirements/2026-11-01-plugin-update-workflow.md)
 - Versioned plugin update implementation spec:
   [2026-11-01-plugin-update-workflow.md](docs/specs/2026-11-01-plugin-update-workflow.md)
+- Local storage management requirement:
+  [2026-11-01-storage-management.md](docs/requirements/2026-11-01-storage-management.md)
+- Local storage management implementation spec:
+  [2026-11-01-storage-management.md](docs/specs/2026-11-01-storage-management.md)
+- Local storage management device E2E:
+  [2026-11-01-storage-management-e2e.md](docs/testing/2026-11-01-storage-management-e2e.md)
 - Structured plan update and floating task list requirement:
   [2026-10-31-structured-plan-update.md](docs/requirements/2026-10-31-structured-plan-update.md)
 - Structured plan update and floating task list implementation spec:

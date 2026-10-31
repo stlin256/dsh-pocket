@@ -146,6 +146,12 @@ export class NativeWorkspaceTextCacheEntry {
   savedAt: number = 0;
 }
 
+export class NativeWorkspaceCacheUsage {
+  directory: number = 0;
+  text: number = 0;
+  binary: number = 0;
+}
+
 /**
  * Persistent, account-scoped workspace read cache. Metadata is encrypted in an
  * S3 relational store; binary previews use the app-private files directory.
@@ -539,6 +545,40 @@ export class NativeWorkspaceCache {
     });
     NativeWorkspaceCache.writes = operation;
     await operation;
+  }
+
+  /** Logical retained workspace bytes without touching LRU timestamps. */
+  static async usageScope(context: common.UIAbilityContext,
+    scope: string): Promise<NativeWorkspaceCacheUsage> {
+    await NativeWorkspaceCache.writes.catch((): void => {});
+    const store = await NativeWorkspaceCache.database(context);
+    const scopeId = nativeWorkspaceScopeId(scope);
+    const usage = new NativeWorkspaceCacheUsage();
+
+    const directories = await store.querySql(
+      'SELECT COALESCE(SUM(bytes),0) FROM directory_cache WHERE scope_id=?', [scopeId]);
+    try {
+      if (directories.goToFirstRow()) usage.directory = Math.max(0, directories.getLong(0));
+    } finally {
+      directories.close();
+    }
+
+    const texts = await store.querySql(
+      'SELECT COALESCE(SUM(bytes),0) FROM text_cache WHERE scope_id=?', [scopeId]);
+    try {
+      if (texts.goToFirstRow()) usage.text = Math.max(0, texts.getLong(0));
+    } finally {
+      texts.close();
+    }
+
+    const binaries = await store.querySql(
+      'SELECT COALESCE(SUM(bytes),0) FROM binary_cache WHERE scope_id=?', [scopeId]);
+    try {
+      if (binaries.goToFirstRow()) usage.binary = Math.max(0, binaries.getLong(0));
+    } finally {
+      binaries.close();
+    }
+    return usage;
   }
 
   private static async trimMetadata(store: relationalStore.RdbStore, scopeId: string): Promise<void> {

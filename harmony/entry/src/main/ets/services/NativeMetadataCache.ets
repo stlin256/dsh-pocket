@@ -126,6 +126,18 @@ export class NativeMetadataCache {
       store.flush().catch(() => {});
     } catch (_) {}
   }
+  /** UTF-16 payload estimate for the active session/workspace metadata. */
+  static usage(context: common.UIAbilityContext, origin: string): number {
+    try {
+      const store = NativeMetadataCache.store(context);
+      const payload = store.getSync(NativeMetadataCache.key(origin), '') as string;
+      const route = store.getSync(NativeMetadataCache.routeKey(origin), '') as string;
+      const interactions = store.getSync(NativeMetadataCache.interactionKey(origin), '') as string;
+      return Math.max(0, payload.length + route.length + interactions.length) * 2;
+    } catch (_) {
+      return 0;
+    }
+  }
   static clear(context: common.UIAbilityContext, origin: string): void {
     const id = NativeMetadataCache.key(origin);
     const route = NativeMetadataCache.routeKey(origin);

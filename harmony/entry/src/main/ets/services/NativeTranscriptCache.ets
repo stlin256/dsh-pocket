@@ -283,6 +283,35 @@ export class NativeTranscriptCache {
     return operation;
   }
 
+  /** Logical retained transcript bytes for one authenticated scope. */
+  static async usageScope(context: common.UIAbilityContext, scope: string): Promise<number> {
+    await NativeTranscriptCache.writes.catch((): void => {});
+    const store = await NativeTranscriptCache.database(context);
+    const scopeId = NativeTranscriptCache.scopeId(scope);
+    let total = 0;
+    const manifests = await store.querySql(
+      'SELECT COALESCE(SUM(bytes),0) FROM transcript_manifest WHERE scope_id=?',
+      [scopeId]);
+    try {
+      if (manifests.goToFirstRow()) total += manifests.getLong(0);
+    } finally {
+      manifests.close();
+    }
+    const legacy = await store.querySql(
+      `SELECT COALESCE(SUM(c.bytes),0) FROM transcript_cache c
+       WHERE c.scope_id=? AND NOT EXISTS (
+         SELECT 1 FROM transcript_manifest m
+         WHERE m.scope_id=c.scope_id AND m.session_id=c.session_id
+       )`,
+      [scopeId]);
+    try {
+      if (legacy.goToFirstRow()) total += legacy.getLong(0);
+    } finally {
+      legacy.close();
+    }
+    return Math.max(0, total);
+  }
+
   static async saveRoute(context: common.UIAbilityContext, scope: string, sessionId: string): Promise<void> {
     const scopeId = NativeTranscriptCache.scopeId(scope);
     const operation = NativeTranscriptCache.writes.catch((): void => {}).then(async (): Promise<void> => {

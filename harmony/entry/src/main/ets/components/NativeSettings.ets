@@ -1,7 +1,13 @@
+import { common } from '@kit.AbilityKit';
 import { http } from '@kit.NetworkKit';
 import { NativeHarnessClient } from '../services/NativeHarnessClient';
 import { NativeExperience } from '../services/NativeExperience';
 import { NativeChatPreferences, NativeSettingsDescription } from '../services/NativeHostSettings';
+import {
+  NativeStorageManager,
+  NativeStorageUsage,
+  nativeFormatStorageBytes
+} from '../services/NativeStorageManager';
 import { AboutSettings } from './AboutSettings';
 import { DSHIcon } from './DSHIcon';
 import { NativeMotion } from '../services/NativeMotion';
@@ -80,6 +86,10 @@ export struct NativeSettings {
   @State private notifyFailed: string = 'standard';
   @State private notifyApproval: string = 'standard';
   @State private notifyConnection: string = 'off';
+  @State private storageUsage: NativeStorageUsage = new NativeStorageUsage();
+  @State private storageLoading: boolean = false;
+  @State private storageClearing: boolean = false;
+  @State private storageError: string = '';
   @State private initializing: boolean = true;
   @State private pending: string[] = [];
   @State private status: string = '';
@@ -197,6 +207,60 @@ export struct NativeSettings {
     this.retryHostValue = '';
     const update = (): void => { this.settingsPage = page; };
     NativeMotion.animate(this.getUIContext(), 'navigation', update);
+    if (page === 'storage') this.refreshStorageUsage().catch((): void => {});
+  }
+
+  private async refreshStorageUsage(clearError: boolean = true): Promise<void> {
+    if (this.storageLoading) return;
+    this.storageLoading = true;
+    if (clearError) this.storageError = '';
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      const usage = await NativeStorageManager.usageScope(context, this.client.cacheKey());
+      if (this.mounted) {
+        this.updateState((): void => { this.storageUsage = usage; });
+      }
+    } catch (_) {
+      if (this.mounted && clearError) this.storageError = '无法读取缓存占用';
+    } finally {
+      if (this.mounted) this.storageLoading = false;
+    }
+  }
+
+  private confirmClearStorage(): void {
+    if (this.storageClearing || this.storageLoading) return;
+    this.getUIContext().showAlertDialog({
+      title: '清空缓存',
+      message: '仅清除当前账户的本机缓存，不会退出登录或删除远端内容。',
+      autoCancel: true,
+      primaryButton: {
+        value: '取消',
+        action: (): void => {}
+      },
+      secondaryButton: {
+        value: '清空',
+        fontColor: '#D44A4A',
+        action: (): void => {
+          this.clearStorage().catch((): void => {});
+        }
+      }
+    });
+  }
+
+  private async clearStorage(): Promise<void> {
+    if (this.storageClearing || this.storageLoading) return;
+    this.storageClearing = true;
+    this.storageError = '';
+    let failed = false;
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      await NativeStorageManager.clearScope(context, this.client.cacheKey());
+    } catch (_) {
+      failed = true;
+    }
+    await this.refreshStorageUsage(true);
+    if (this.mounted) this.storageClearing = false;
+    if (failed && this.mounted) this.storageError = '缓存清理失败，请重试';
   }
 
   private level(value: string, fallback: string): string {
@@ -501,6 +565,8 @@ export struct NativeSettings {
             this.navigationRow('plan-outline', '通知', this.pushEnabled ? '系统推送' : '按级别投递', 'notifications')
             Divider().strokeWidth(0.5).margin({ left: 44 }).color(this.dark ? '#323236' : '#E9EAEC')
             this.navigationRow('browse-outline', '桌面卡片', this.widgetDetails ? '显示任务名称' : '隐私模式', 'cards')
+            Divider().strokeWidth(0.5).margin({ left: 44 }).color(this.dark ? '#323236' : '#E9EAEC')
+            this.navigationRow('archive-outline', '存储管理', '缓存占用与清理', 'storage')
             Divider().strokeWidth(0.5).margin({ left: 44 }).color(this.dark ? '#323236' : '#E9EAEC')
             this.navigationRow('globe-outline', '服务与账户', '连接和登录', 'connection')
             Divider().strokeWidth(0.5).margin({ left: 44 }).color(this.dark ? '#323236' : '#E9EAEC')
@@ -819,6 +885,84 @@ export struct NativeSettings {
   }
 
   @Builder
+  private storageBreakdownRow(title: string, bytes: number) {
+    Row({ space: 12 }) {
+      Text(title).fontSize(14).layoutWeight(1).fontColor(this.dark ? '#F0F1F2' : '#24262A')
+      Text(nativeFormatStorageBytes(bytes)).fontSize(13).fontWeight(FontWeight.Medium)
+        .fontColor(this.dark ? '#A6A9AE' : '#686C72')
+    }.width('100%').height(50).padding({ left: 14, right: 14 })
+  }
+
+  @Builder
+  private storagePage() {
+    Column() {
+      this.pageHeader('存储管理')
+      Scroll() {
+        Column({ space: 10 }) {
+          Row({ space: 12 }) {
+            Column({ space: 5 }) {
+              Text('缓存占用').fontSize(12).fontColor(this.dark ? '#85888D' : '#777B81')
+              if (this.storageLoading && this.storageUsage.total === 0) {
+                LoadingProgress().width(20).height(20).color(this.dark ? '#A9C6FF' : '#315DCA')
+              } else {
+                Text(nativeFormatStorageBytes(this.storageUsage.total)).fontSize(28)
+                  .fontWeight(FontWeight.Medium).fontColor(this.dark ? '#F9FAFB' : '#17181B')
+              }
+            }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+            if (this.storageLoading && this.storageUsage.total > 0) {
+              LoadingProgress().width(18).height(18).color(this.dark ? '#85888D' : '#777B81')
+            }
+            DSHIcon({ glyph: 'archive-outline', glyphSize: 22,
+              color: this.dark ? '#A9C6FF' : '#315DCA' })
+          }.width('100%').padding(16).borderRadius(16)
+            .backgroundColor(this.dark ? '#232326' : '#FFFFFF')
+          Column() {
+            this.storageBreakdownRow('对话内容', this.storageUsage.conversation)
+            Divider().strokeWidth(0.5).margin({ left: 14 }).color(this.dark ? '#323236' : '#E9EAEC')
+            this.storageBreakdownRow('文件浏览', this.storageUsage.fileBrowser)
+            Divider().strokeWidth(0.5).margin({ left: 14 }).color(this.dark ? '#323236' : '#E9EAEC')
+            this.storageBreakdownRow('文件内容', this.storageUsage.fileContent)
+            Divider().strokeWidth(0.5).margin({ left: 14 }).color(this.dark ? '#323236' : '#E9EAEC')
+            this.storageBreakdownRow('图片附件', this.storageUsage.imageAttachments)
+            Divider().strokeWidth(0.5).margin({ left: 14 }).color(this.dark ? '#323236' : '#E9EAEC')
+            this.storageBreakdownRow('界面索引', this.storageUsage.navigation)
+          }.width('100%').borderRadius(16).clip(true)
+            .backgroundColor(this.dark ? '#232326' : '#FFFFFF')
+          Button({ type: ButtonType.Normal }) {
+            Row({ space: 10 }) {
+              DSHIcon({ glyph: 'archive-outline', glyphSize: 17,
+                color: this.dark ? '#FF9999' : '#B83A3A' })
+              Text('清空缓存').fontSize(14).fontWeight(FontWeight.Medium)
+                .fontColor(this.dark ? '#FF9999' : '#B83A3A')
+              Blank()
+              if (this.storageClearing) LoadingProgress().width(17).height(17)
+            }.width('100%').height(52).padding({ left: 14, right: 14 })
+          }.width('100%').height(52).borderRadius(16).backgroundColor(Color.Transparent)
+            .enabled(!this.storageClearing && !this.storageLoading)
+            .accessibilityText('清空缓存')
+            .onClick((): void => { this.confirmClearStorage(); })
+          if (this.storageError) {
+            Row({ space: 10 }) {
+              Text(this.storageError).fontSize(12).layoutWeight(1)
+                .fontColor(this.dark ? '#FF9999' : '#B83A3A')
+              if (!this.storageLoading) {
+                Button('重试', { type: ButtonType.Normal }).height(32).fontSize(12)
+                  .backgroundColor(this.dark ? '#3A2A2C' : '#FDECEC')
+                  .fontColor(this.dark ? '#FFB4B4' : '#A92F34')
+                  .onClick((): void => { this.refreshStorageUsage().catch((): void => {}); })
+              }
+            }.padding(12).borderRadius(14)
+              .backgroundColor(this.dark ? '#2B2224' : '#FDECEC')
+          }
+        }.padding({ left: 16, right: 16, top: 0, bottom: this.safeBottom + 28 }).width('100%')
+          .constraintSize({ maxWidth: 680 }).alignItems(HorizontalAlign.Start)
+      }.layoutWeight(1).width('100%').align(Alignment.TopStart).scrollBar(BarState.Off)
+    }.padding({ top: this.safeTop, left: 12 + this.safeLeft, right: 12 + this.safeRight }).width('100%').height('100%')
+      .backgroundColor(this.dark ? '#171719' : '#F5F6F8')
+      .transition(NativeMotion.navigationTransition())
+  }
+
+  @Builder
   private connectionPage() {
     Column() {
       this.pageHeader('服务与账户')
@@ -850,6 +994,7 @@ export struct NativeSettings {
     else if (this.settingsPage === 'appearance') this.appearancePage()
     else if (this.settingsPage === 'notifications') this.notificationsPage()
     else if (this.settingsPage === 'cards') this.cardsPage()
+    else if (this.settingsPage === 'storage') this.storagePage()
     else if (this.settingsPage === 'connection') this.connectionPage()
     else if (this.settingsPage === 'about') {
       Column() {
