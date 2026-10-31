@@ -1056,7 +1056,7 @@ test('process operations receive unique stable render keys and preview content l
   const previewSource=readFileSync(new URL('../../harmony/entry/src/main/ets/components/NativeFilePreview.ets', import.meta.url),'utf8');
   const loadBody=previewSource.slice(previewSource.indexOf('private async load('),previewSource.indexOf('private async loadMetadata('));
   assert.match(loadBody,/this\.loadMetadata\(generation\)/);
-  assert.match(loadBody,/loadImageWithRetry\(generation\)/);
+  assert.match(loadBody,/loadImageWithRetry\(generation, false\)/);
   assert.doesNotMatch(loadBody,/await this\.client\.statFile/);
   assert.match(previewSource,/setTimeout\(resolve, 120\)/);
   const clientSource=readFileSync(new URL('../../harmony/entry/src/main/ets/services/NativeHarnessClient.ets', import.meta.url),'utf8');

@@ -149,6 +149,12 @@ or real transcript content in source, tests, docs, logs or commits.
   [2026-10-31-chat-link-existence.md](docs/specs/2026-10-31-chat-link-existence.md)
 - Chat link existence device E2E:
   [2026-10-31-chat-link-existence-e2e.md](docs/testing/2026-10-31-chat-link-existence-e2e.md)
+- Workspace file persistent cache requirement:
+  [2026-11-01-workspace-file-persistent-cache.md](docs/requirements/2026-11-01-workspace-file-persistent-cache.md)
+- Workspace file persistent cache implementation spec:
+  [2026-11-01-workspace-file-persistent-cache.md](docs/specs/2026-11-01-workspace-file-persistent-cache.md)
+- Workspace file persistent cache device E2E:
+  [2026-11-01-workspace-file-persistent-cache-e2e.md](docs/testing/2026-11-01-workspace-file-persistent-cache-e2e.md)
 - Structured plan update and floating task list requirement:
   [2026-10-31-structured-plan-update.md](docs/requirements/2026-10-31-structured-plan-update.md)
 - Structured plan update and floating task list implementation spec:

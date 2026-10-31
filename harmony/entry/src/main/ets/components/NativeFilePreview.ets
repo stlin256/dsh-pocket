@@ -1,7 +1,12 @@
 import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { NativeFilePage, NativeFileStat, NativeHarnessClient } from '../services/NativeHarnessClient';
+import {
+  NativeFilePage,
+  NativeFileStat,
+  NativeHarnessClient,
+  NativeHttpError
+} from '../services/NativeHarnessClient';
 import { NativeFileContent, NativeFileTransfer } from '../services/NativeFileTransfer';
 import { NativeDocumentDescriptor, nativeDocumentDescriptor } from '../services/NativeDocumentModel';
 import { DSHIcon } from './DSHIcon';
@@ -10,6 +15,11 @@ import { NativeImageZoom, NativeImageZoomTarget } from '../services/NativeImageZ
 import { NativeDocumentModeSwitch } from './NativeDocumentModeSwitch';
 import { NativeCodeViewer } from './NativeCodeViewer';
 import { NativeMarkdownPreview } from './NativeMarkdownPreview';
+import {
+  NativeWorkspaceCache,
+  NativeWorkspaceCachedBinary,
+  NativeWorkspaceTextCacheEntry
+} from '../services/NativeWorkspaceCache';
 
 const previewImageLimit: number = 128 * 1024 * 1024;
 
@@ -89,6 +99,7 @@ export struct NativeFilePreview {
     this.releaseImage();
     this.text = ''; this.textLoaded = false; this.nextOffset = 1; this.lineStart = 1;
     this.hasMore = false; this.error = ''; this.loading = true; this.loadingMore = false;
+    this.version = ''; this.lineLabel = ''; this.bytesLabel = '';
     this.title = this.basename(this.path);
     this.expectedBytes = -1;
     this.zoom = 1;
@@ -258,15 +269,66 @@ export struct NativeFilePreview {
       this.loading = false;
       return;
     }
-    // Size metadata is non-blocking. Content carries its own version and starts
-    // on the same frame as this call.
-    this.loadMetadata(generation);
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const scope = this.client.cacheKey();
     try {
       if (this.documentKind === 'image' || (this.documentKind === 'svg' && this.mode === 'preview')) {
-        if (!await this.loadImageWithRetry(generation)) this.error = '无法预览此图片';
+        const cachedImage = await this.loadCachedImage(generation, context, scope);
+        if (!this.mounted || generation !== this.generation) return;
+        if (cachedImage) {
+          this.loading = false;
+          let stat: NativeFileStat | null = null;
+          try {
+            stat = await this.loadMetadata(generation);
+          } catch (error) {
+            if (error instanceof NativeHttpError && error.status >= 400 && error.status < 500) {
+              await NativeWorkspaceCache.removeEntry(
+                context, scope, this.sessionId, this.path, false, false, true);
+              this.releaseImage();
+              this.error = '此文件不可用';
+              return;
+            } else {
+              return;
+            }
+          }
+          if (!this.mounted || generation !== this.generation) return;
+          if (stat && stat.version === this.version) return;
+        }
+        const metadata = this.loadMetadata(generation).catch((): NativeFileStat | null => null);
+        if (!await this.loadImageWithRetry(generation, false)) this.error = '无法预览此图片';
+        await metadata;
       } else {
+        const cachedText: NativeWorkspaceTextCacheEntry | null =
+          await NativeWorkspaceCache.loadText(context, scope, this.sessionId, this.path);
+        if (cachedText && this.mounted && generation === this.generation) {
+          this.applyPage(cachedText.page, true);
+          this.loading = false;
+          let stat: NativeFileStat | null = null;
+          try {
+            stat = await this.loadMetadata(generation);
+          } catch (error) {
+            if (error instanceof NativeHttpError && error.status >= 400 && error.status < 500) {
+              await NativeWorkspaceCache.removeEntry(
+                context, scope, this.sessionId, this.path, false, true);
+              this.text = '';
+              this.textLoaded = false;
+              this.version = '';
+              this.lineLabel = '';
+              this.error = '此文件不可用';
+              return;
+            } else {
+              return;
+            }
+          }
+          if (!this.mounted || generation !== this.generation) return;
+          if (stat && stat.version === cachedText.page.version) return;
+        } else {
+          this.loadMetadata(generation).catch((): void => {});
+        }
         try {
-          await this.loadText(true, generation);
+          const page = await this.loadText(true, generation);
+          await NativeWorkspaceCache.saveText(
+            context, scope, this.sessionId, this.path, page).catch((): void => {});
           if (this.documentKind === 'unknown') {
             this.documentKind = 'text';
             this.mode = 'code';
@@ -281,26 +343,35 @@ export struct NativeFilePreview {
       if (this.mounted && generation === this.generation) this.loading = false;
     }
   }
-  private async loadMetadata(generation: number): Promise<void> {
-    try {
-      const stat: NativeFileStat = await this.client.statFile(this.sessionId, this.path);
-      if (!this.mounted || generation !== this.generation) return;
-      this.expectedBytes = stat.bytes;
-      if (!this.version) this.version = stat.version;
-      this.bytesLabel = stat.bytes >= 0 ? this.formatBytes(stat.bytes) : '';
-    } catch (_) {
-      // Content loading owns the user-visible success or failure state.
-    }
+  private async loadMetadata(generation: number): Promise<NativeFileStat> {
+    const stat: NativeFileStat = await this.client.statFile(this.sessionId, this.path);
+    if (!this.mounted || generation !== this.generation) return stat;
+    this.expectedBytes = stat.bytes;
+    if (!this.version) this.version = stat.version;
+    this.bytesLabel = stat.bytes >= 0 ? this.formatBytes(stat.bytes) : '';
+    return stat;
   }
   private async loadImage(generation: number, expectedVersion: string = this.version,
     expectedBytes: number = this.expectedBytes): Promise<boolean> {
-    let pending: image.ImageSource | null = null;
-    let stage = 'read';
     try {
       const content: NativeFileContent = await NativeFileTransfer.readComplete(
         this.client, this.sessionId, this.path, previewImageLimit, expectedVersion, expectedBytes);
       if (!this.mounted || generation !== this.generation || !content.bytes.byteLength) return false;
-      stage = 'source';
+      if (!await this.decodeImageContent(content, generation)) return false;
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      await NativeWorkspaceCache.saveBinary(context, this.client.cacheKey(), this.sessionId,
+        this.path, content.bytes, content.version, content.totalBytes).catch((): void => {});
+      return true;
+    } catch (error) {
+      console.error('NativeFilePreview image read failed: ' +
+        (error instanceof Error ? error.message : String(error)));
+      return false;
+    }
+  }
+  private async decodeImageContent(content: NativeFileContent, generation: number): Promise<boolean> {
+    let pending: image.ImageSource | null = null;
+    let stage = 'source';
+    try {
       pending = image.createImageSource(content.bytes.buffer as ArrayBuffer);
       stage = 'info';
       const info = await pending.getImageInfo();
@@ -328,7 +399,9 @@ export struct NativeFilePreview {
       this.offsetX = 0;
       this.offsetY = 0;
       this.version = content.version;
-      this.bytesLabel = content.totalBytes >= 0 ? this.formatBytes(content.totalBytes) : this.bytesLabel;
+      this.expectedBytes = content.totalBytes;
+      this.bytesLabel = content.totalBytes >= 0 ?
+        this.formatBytes(content.totalBytes) : this.bytesLabel;
       this.error = '';
       return true;
     } catch (error) {
@@ -338,7 +411,21 @@ export struct NativeFilePreview {
       return false;
     }
   }
-  private async loadImageWithRetry(generation: number): Promise<boolean> {
+  private async loadCachedImage(generation: number, context: common.UIAbilityContext,
+    scope: string): Promise<boolean> {
+    const cached: NativeWorkspaceCachedBinary | null =
+      await NativeWorkspaceCache.loadBinary(context, scope, this.sessionId, this.path);
+    if (!cached || !this.mounted || generation !== this.generation) return false;
+    const content = new NativeFileContent();
+    content.bytes = cached.bytes;
+    content.version = cached.version;
+    content.totalBytes = cached.totalBytes;
+    return this.decodeImageContent(content, generation);
+  }
+  private async loadImageWithRetry(generation: number, allowCache: boolean = true): Promise<boolean> {
+    if (allowCache && await this.loadCachedImage(generation,
+      this.getUIContext().getHostContext() as common.UIAbilityContext, this.client.cacheKey())) return true;
+    if (!this.mounted || generation !== this.generation) return false;
     if (await this.loadImage(generation)) return true;
     if (!this.mounted || generation !== this.generation) return false;
     await new Promise<void>((resolve: () => void): void => {
@@ -351,6 +438,10 @@ export struct NativeFilePreview {
     const page: NativeFilePage = await this.client.file(this.sessionId, this.path,
       reset ? 1 : this.nextOffset, 500);
     if (!this.mounted || generation !== this.generation) return page;
+    this.applyPage(page, reset);
+    return page;
+  }
+  private applyPage(page: NativeFilePage, reset: boolean): void {
     if (reset) {
       this.text = page.text;
       this.lineStart = page.offset;
@@ -358,11 +449,23 @@ export struct NativeFilePreview {
       this.text += (this.text ? '\n' : '') + page.text;
     }
     this.textLoaded = true;
+    this.version = page.version;
     this.nextOffset = page.offset + Math.max(0, page.lines);
     this.hasMore = !page.eof;
-    const end = page.offset + Math.max(0, page.lines - 1);
-    this.lineLabel = '第 ' + page.offset + '–' + end + ' 行' + (page.eof ? '' : ' · 可继续加载');
-    return page;
+    const loadedLines = reset ? page.lines :
+      Math.max(0, this.nextOffset - this.lineStart);
+    const end = this.lineStart + Math.max(0, loadedLines - 1);
+    this.lineLabel = '第 ' + this.lineStart + '–' + end + ' 行' + (page.eof ? '' : ' · 可继续加载');
+  }
+  private persistedTextPage(page: NativeFilePage): NativeFilePage {
+    const value = new NativeFilePage();
+    value.absolutePath = page.absolutePath;
+    value.version = page.version;
+    value.text = this.text;
+    value.offset = this.lineStart;
+    value.lines = this.nextOffset - this.lineStart;
+    value.eof = !this.hasMore;
+    return value;
   }
   private async more(): Promise<void> {
     if (this.loadingMore || !this.hasMore) return;
@@ -370,7 +473,12 @@ export struct NativeFilePreview {
     this.loadingMore = true;
     try {
       const page = await this.loadText(false, generation);
-      if (generation === this.generation) this.version = page.version;
+      if (generation === this.generation) {
+        this.version = page.version;
+        const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+        await NativeWorkspaceCache.saveText(context, this.client.cacheKey(), this.sessionId,
+          this.path, this.persistedTextPage(page)).catch((): void => {});
+      }
     } catch (_) {
       if (this.mounted && generation === this.generation) this.error = '读取更多内容失败';
     } finally {
@@ -384,6 +492,11 @@ export struct NativeFilePreview {
     if (next === 'code' && !this.textLoaded) {
       this.loading = true;
       this.loadText(true, generation)
+        .then(async (page: NativeFilePage): Promise<void> => {
+          const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+          await NativeWorkspaceCache.saveText(context, this.client.cacheKey(), this.sessionId,
+            this.path, page).catch((): void => {});
+        })
         .catch((): void => { if (generation === this.generation) this.error = '无法读取源代码'; })
         .finally((): void => { if (this.mounted && generation === this.generation) this.loading = false; });
     } else if (next === 'preview' && (this.documentKind === 'svg') && !this.imageMap) {

@@ -1,10 +1,20 @@
 import { common } from '@kit.AbilityKit';
-import { NativeDirectoryEntry, NativeDirectoryListing, NativeHarnessClient } from '../services/NativeHarnessClient';
+import {
+  NativeDirectoryEntry,
+  NativeDirectoryListing,
+  NativeHarnessClient,
+  NativeHttpError
+} from '../services/NativeHarnessClient';
 import { DSHIcon } from './DSHIcon';
 import { NativeFilePreview } from './NativeFilePreview';
 import { NativeExperience } from '../services/NativeExperience';
 import { NativeMotion } from '../services/NativeMotion';
 import { NativeFileTransfer } from '../services/NativeFileTransfer';
+import {
+  NativeWorkspaceCache,
+  NativeWorkspaceDirectoryCacheEntry,
+  nativeDirectoryFingerprint
+} from '../services/NativeWorkspaceCache';
 
 class NativePathPart {
   label: string = '';
@@ -56,8 +66,12 @@ export struct NativeFileBrowser {
     const requested = this.workspacePath(next);
     const previousPath = this.navigationPath;
     const previousDisplayPath = this.displayPath;
+    const previousEntries = this.entries;
+    const previousTruncated = this.truncated;
     const generation = ++this.requestGeneration;
     const preserveContent = this.hasLoaded;
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    const scope = this.client.cacheKey();
     if (preserveContent) {
       this.navigating = true;
       this.navigationPath = requested;
@@ -65,26 +79,63 @@ export struct NativeFileBrowser {
       this.loading = true;
     }
     this.error = '';
+    let cached: NativeWorkspaceDirectoryCacheEntry | null = null;
     try {
+      cached = await NativeWorkspaceCache.loadDirectory(
+        context, scope, this.sessionId, requested);
+      if (!this.mounted || generation !== this.requestGeneration) return;
+      if (cached) {
+        this.navigationPath = requested;
+        this.displayPath = cached.listing.path || requested;
+        this.entries = cached.listing.entries;
+        this.truncated = cached.listing.truncated;
+        this.hasLoaded = true;
+        this.loading = false;
+        this.navigating = true;
+        this.client.rememberBrowsePath(this.sessionId, requested);
+      }
       const value: NativeDirectoryListing = await this.client.listFiles(this.sessionId, requested);
       if (!this.mounted || generation !== this.requestGeneration) return;
+      const fingerprint = nativeDirectoryFingerprint(value.entries, value.truncated);
       this.navigationPath = requested;
       this.displayPath = value.path;
-      this.entries = value.entries;
-      this.truncated = value.truncated;
+      if (!cached || cached.fingerprint !== fingerprint) {
+        this.entries = value.entries;
+        this.truncated = value.truncated;
+      }
       this.hasLoaded = true;
       this.rootExitArmedAt = 0;
       this.client.rememberBrowsePath(this.sessionId, requested);
-    } catch (_) {
+      if (!cached || cached.fingerprint !== fingerprint) {
+        NativeWorkspaceCache.saveDirectory(
+          context, scope, this.sessionId, requested, value).catch((): void => {});
+      }
+    } catch (error) {
       if (!this.mounted || generation !== this.requestGeneration) return;
+      const stableUnavailable = error instanceof NativeHttpError &&
+        error.status >= 400 && error.status < 500;
+      if (cached && !stableUnavailable) {
+        // A validated warm frame remains useful while a transient refresh fails.
+        return;
+      }
+      if (cached) {
+        await NativeWorkspaceCache.removeEntry(
+          context, scope, this.sessionId, requested, true, false);
+      }
       if (preserveContent) {
         this.navigationPath = previousPath;
         this.displayPath = previousDisplayPath;
+        this.entries = previousEntries;
+        this.truncated = previousTruncated;
+        this.hasLoaded = true;
         this.getUIContext().getPromptAction().showToast({
           message: '无法打开此文件夹',
           duration: 1400
         });
       } else {
+        this.entries = [];
+        this.truncated = false;
+        this.hasLoaded = false;
         this.error = '无法打开此文件夹';
       }
     } finally {

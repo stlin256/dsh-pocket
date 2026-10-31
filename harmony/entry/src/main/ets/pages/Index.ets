@@ -16,6 +16,7 @@ import { PushKitAdapter } from 'entry/PushKitAdapter';
 import { NativeMetadataCache } from '../services/NativeMetadataCache';
 import { NativeTranscriptCache } from '../services/NativeTranscriptCache';
 import { NativeAttachmentCache } from '../services/NativeAttachmentCache';
+import { NativeWorkspaceCache } from '../services/NativeWorkspaceCache';
 import { NativeMotion } from '../services/NativeMotion';
 import { StoreShowcaseClient } from '../services/StoreShowcaseClient';
 import { ProductCapabilities } from 'entry/ProductCapabilities';
@@ -401,6 +402,7 @@ struct Index {
       NativeMetadataCache.clear(this.context, scope);
       try { await NativeTranscriptCache.clearScope(this.context, scope); } catch (_) {}
       try { await NativeAttachmentCache.clearScope(this.context, scope); } catch (_) {}
+      try { await NativeWorkspaceCache.clearScope(this.context, scope); } catch (_) {}
     }
     WindowAppearance.apply(this.context.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
     this.nativeClient.pause(); this.nativeClient.drafts.clear(); this.nativeClient.images.clear(); this.nativeClient.uncertain.clear();

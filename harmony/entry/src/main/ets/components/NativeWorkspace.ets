@@ -25,6 +25,7 @@ import { NativeNavigationState, nativeSessionMenu, nativeCanGoBack, nativeForkTi
 import { NativeMenuItem } from '../services/NativeNavigation';
 import { NativeMetadataCache } from '../services/NativeMetadataCache';
 import { NativeTranscriptCache } from '../services/NativeTranscriptCache';
+import { NativeWorkspaceCache } from '../services/NativeWorkspaceCache';
 import { NativeMotion } from '../services/NativeMotion';
 import { NativeImageLightbox } from './NativeImageLightbox';
 import { NativeFilePreview } from './NativeFilePreview';
@@ -738,6 +739,7 @@ export struct NativeWorkspace {
           this.client.pause(); this.selected = ''; this.client.selectedId = ''; this.setDrawerState(true);
           NativeMetadataCache.forgetSession(this.context, this.client.cacheKey());
           NativeTranscriptCache.forgetSession(this.context, this.client.cacheKey(), id).catch(() => {});
+          NativeWorkspaceCache.clearSession(this.context, this.client.cacheKey(), id).catch(() => {});
         }
       }
       await this.refreshSessionList();
