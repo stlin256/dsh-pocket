@@ -35,6 +35,18 @@ import { NativeHistoryRetryPolicy, nativeHistoryPageAdvanced } from '../services
 import { NativePlanDocument, nativeLatestPlan, nativePlanSignature } from '../services/NativePlan';
 import { NativeTaskDock } from './NativeTaskDock';
 import { NativeConversationDock } from './NativeConversationDock';
+import {
+  nativeLiveTurnChange,
+  nativeTurnChangeFor,
+  nativeTurnChanges,
+  NativeTurnChangeSummary
+} from '../services/NativeTurnChanges';
+import { nativeFileTarget } from '../services/NativeLinkResolver';
+import {
+  NativeTurnChangePill,
+  NativeTurnChangesCard
+} from './NativeTurnChangesView';
+import { NativeBottomConversationDock } from './NativeBottomConversationDock';
 
 class NativeExportCapabilities { copyMarkdown: boolean = false; downloadLog: boolean = false; }
 class NativeWorkspaceOrderRequest {
@@ -163,10 +175,14 @@ export struct NativeWorkspace {
   @State private drawerTranslation: number = 0;
   @State private transcriptViewportHeight: number = 0;
   @State private conversationDockHeight: number = 0;
+  @State private bottomDockContentHeight: number = 0;
   @State private streamText: string = '';
   @State private streamReasoning: string = '';
   @State private footerCopiedId: string = '';
   @State private taskPlan: NativePlanDocument = new NativePlanDocument();
+  @State private turnChanges: NativeTurnChangeSummary[] = [];
+  @State private liveTurnChanges: NativeTurnChangeSummary = new NativeTurnChangeSummary();
+  @State private liveTurnChangesVisible: boolean = false;
   private sessionSource: NativeListSource<NativeWorkspaceRow> = new NativeListSource<NativeWorkspaceRow>();
   private source: NativeListSource<NativeMessage> = new NativeListSource<NativeMessage>();
   private scroller: Scroller = new Scroller();
@@ -1221,6 +1237,9 @@ export struct NativeWorkspace {
     this.exportCapabilities = capabilities || new NativeExportCapabilities();
     this.prefetchUtilities(id);
     this.previousRows = this.model.messages;
+    this.turnChanges = [];
+    this.liveTurnChanges = new NativeTurnChangeSummary();
+    this.liveTurnChangesVisible = false;
     this.renderTranscript();
     this.streamText = ''; this.streamReasoning = '';
     this.running = false; this.waiting = false; this.retries = 0;
@@ -1368,6 +1387,23 @@ export struct NativeWorkspace {
   }
   private renderTranscript(): void {
     const rows = nativeTranscript(this.model.messages, this.model.running, this.model.streamTools, this.model.streamReasoning, this.model.streamText);
+    this.turnChanges = nativeTurnChanges(rows);
+    const live = nativeLiveTurnChange(rows,
+      this.model.running || this.model.waiting || this.running || this.waiting);
+    if (live) {
+      if (!this.liveTurnChangesVisible) {
+        NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
+          this.liveTurnChanges = live;
+          this.liveTurnChangesVisible = true;
+        });
+      } else {
+        this.liveTurnChanges = live;
+      }
+    } else if (this.liveTurnChangesVisible) {
+      NativeMotion.animate(this.getUIContext(), 'micro', (): void => {
+        this.liveTurnChangesVisible = false;
+      });
+    }
     const plan = nativeLatestPlan(rows);
     const planSignature = nativePlanSignature(plan);
     if (planSignature !== this.taskPlanSignature || plan.parsed !== this.taskPlan.parsed) {
@@ -1381,6 +1417,26 @@ export struct NativeWorkspace {
     const visible = nativePresentTranscript(rows, this.client.hostSettings.chat(), this.model.turnDisclosure, this.model.collapseThrough);
     this.visibleRows = visible;
     this.source.set(visible, (row: NativeMessage): string => row.id);
+  }
+  private turnChangeFor(turnKey: string): NativeTurnChangeSummary {
+    return nativeTurnChangeFor(this.turnChanges, turnKey) || new NativeTurnChangeSummary();
+  }
+  private openTurnChangeFile(path: string): void {
+    if (!this.selected || !path) return;
+    const request = new NativeFileViewRequest();
+    request.kind = 'file';
+    request.sessionId = this.selected;
+    request.path = nativeFileTarget(path, this.workspaceRootFor(this.selected));
+    request.requestId = util.generateRandomUUID();
+    const clean = request.path.replace(/\\/g, '/');
+    const slash = clean.lastIndexOf('/');
+    this.client.rememberBrowsePath(this.selected, slash >= 0 ? clean.slice(0, slash) : '');
+    this.fileView = request;
+    this.fileViewOpen = true;
+    this.navigationChanged();
+  }
+  private bottomDockOverlayInset(): number {
+    return this.liveTurnChangesVisible ? 42 : 4;
   }
   private copyFooter(text: string, id: string): void {
     if (!text) return;
@@ -2013,22 +2069,35 @@ export struct NativeWorkspace {
                   maxExpandedHeight: Math.max(180, this.transcriptViewportHeight * 0.6),
                   maxChildExpandedHeight: Math.max(120, this.transcriptViewportHeight * 0.36) })
               } else if (message.role === 'turn-footer') {
-                Row({ space: 8 }) {
-                  Text(message.label + (message.text ? ' · ' + message.text : '')).fontSize(11).layoutWeight(1)
-                    .fontColor(message.footerOutcome === 'failed' ? '#D55E5E' : this.dark ? '#93969B' : '#8A8D91')
-                  if (message.footerCopyText) {
-                    Button({ type: ButtonType.Normal }) {
-                      DSHIcon({ glyph: this.footerCopiedId === message.footerCopyMessageId ?
-                        'check-outline' : 'copy-outline', glyphSize: 13,
-                        color: this.dark ? '#93969B' : '#8A8D91' })
-                    }.width(28).height(28).borderRadius(9).backgroundColor(Color.Transparent)
-                      .accessibilityText(this.footerCopiedId === message.footerCopyMessageId ?
-                        '答复已复制' : '复制最终答复')
-                      .onClick((): void => {
-                        this.copyFooter(message.footerCopyText, message.footerCopyMessageId);
-                      })
-                  }
-                }.width('100%').constraintSize({ minHeight: 28 })
+                if (this.turnChangeFor(message.turnKey).fileCount > 0) {
+                  NativeTurnChangesCard({
+                    summary: this.turnChangeFor(message.turnKey),
+                    maxExpandedHeight: Math.max(180, this.transcriptViewportHeight * 0.45),
+                    copied: this.footerCopiedId === message.footerCopyMessageId,
+                    canCopy: !!message.footerCopyText,
+                    onOpenFile: (path: string): void => { this.openTurnChangeFile(path); },
+                    onCopy: (): void => {
+                      this.copyFooter(message.footerCopyText, message.footerCopyMessageId);
+                    }
+                  })
+                } else {
+                  Row({ space: 8 }) {
+                    Text(message.label + (message.text ? ' · ' + message.text : '')).fontSize(11).layoutWeight(1)
+                      .fontColor(message.footerOutcome === 'failed' ? '#D55E5E' : this.dark ? '#93969B' : '#8A8D91')
+                    if (message.footerCopyText) {
+                      Button({ type: ButtonType.Normal }) {
+                        DSHIcon({ glyph: this.footerCopiedId === message.footerCopyMessageId ?
+                          'check-outline' : 'copy-outline', glyphSize: 13,
+                          color: this.dark ? '#93969B' : '#8A8D91' })
+                      }.width(28).height(28).borderRadius(9).backgroundColor(Color.Transparent)
+                        .accessibilityText(this.footerCopiedId === message.footerCopyMessageId ?
+                          '答复已复制' : '复制最终答复')
+                        .onClick((): void => {
+                          this.copyFooter(message.footerCopyText, message.footerCopyMessageId);
+                        })
+                    }
+                  }.width('100%').constraintSize({ minHeight: 28 })
+                }
               } else { Row() {
                 if (message.role === 'user') { Blank().layoutWeight(1) }
                 NativeMessageView({ client: this.client, sessionId: this.selected, message: message, onCompatibility: this.onCompatibility })
@@ -2101,7 +2170,8 @@ export struct NativeWorkspace {
                 this.backToBottomPressed = false;
                 this.returnToBottom();
               })
-              .margin({ bottom: 4 })
+              .margin({ bottom: this.bottomDockOverlayInset() })
+              .animation(NativeMotion.implicit('micro'))
               .transition(NativeMotion.rowTransition())
           }.width('100%').height('100%')
             .hitTestBehavior(HitTestMode.Transparent).zIndex(6)
@@ -2127,8 +2197,19 @@ export struct NativeWorkspace {
           .backgroundColor(Color.Transparent).fontColor(this.dark ? '#CFD3D6' : '#61666B')
           .onClick(() => { this.client.uncertain.delete(this.selected); this.uncertain = false; })
       }
+      NativeBottomConversationDock({
+        horizontalBleed: 12,
+        contentInset: 0,
+        onHeight: (height: number): void => {
+          if (height > 0 && height !== this.bottomDockContentHeight) {
+            this.bottomDockContentHeight = height;
+          }
+        }
+      }) {
       Stack({ alignContent: Alignment.BottomStart }) {
         Column({ space: 8 }) {
+          Flex({ direction: FlexDirection.ColumnReverse }) {
+          Column({ space: 8 }) {
           TextArea({ text: this.draft, placeholder: '发送消息…' }).height(44).enabled(!this.sending)
             .placeholderColor(this.dark ? '#93969B' : '#8A8D91')
             .fontSize(14).borderRadius(0).padding({ left: 7, right: 7, top: 3, bottom: 3 })
@@ -2245,10 +2326,24 @@ export struct NativeWorkspace {
               }
             }.scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off).width('100%')
           }.width('100%').padding({ left: 8, right: 12 })
-            .translate({ y: -(this.composerHeight + 8) })
+            .margin({ top: 8 })
+            .transition(NativeMotion.rowTransition())
+        }
+          }.width('100%')
+        }.width('100%')
+        if (this.liveTurnChangesVisible) {
+          Row() {
+            NativeTurnChangePill({
+              summary: this.liveTurnChanges,
+              maxWidth: Math.min(360, Math.max(180, this.windowWidth - 64))
+            })
+          }.width('100%').height(30).justifyContent(FlexAlign.Center)
+            .translate({ y: -(this.bottomDockContentHeight + 8) })
+            .hitTestBehavior(HitTestMode.None)
             .transition(NativeMotion.rowTransition())
         }
       }.width('100%').clip(false)
+      }
     }.padding({ left: 12, right: 12, top: this.safeTop + 4,
       bottom: Math.ceil(this.safeBottom * 1.2) + 8 })
       .height('100%').layoutWeight(1)

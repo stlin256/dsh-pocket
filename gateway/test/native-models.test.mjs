@@ -794,6 +794,35 @@ test('live turn file changes require an active unfinished turn and ignore malfor
     })])[0].outcome, 'cancelled');
 });
 
+test('turn change card and bottom live control keep compact ownership and motion contracts', () => {
+  const view = readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/components/NativeTurnChangesView.ets',
+    import.meta.url), 'utf8');
+  const workspace = readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/components/NativeWorkspace.ets',
+    import.meta.url), 'utf8');
+  const dock = readFileSync(new URL(
+    '../../harmony/entry/src/main/ets/components/NativeBottomConversationDock.ets',
+    import.meta.url), 'utf8');
+  assert.match(view, /已编辑 ' \+ this\.summary\.fileCount \+ ' 个文件/);
+  assert.match(view, /this\.summary\.files\.slice\(0, 3\)/);
+  assert.match(view, /再显示 ' \+ \(this\.summary\.fileCount - 3\) \+ ' 个文件/);
+  assert.match(view, /onOpenFile: \(path: string\) => void/);
+  assert.match(view, /duration: 170/);
+  assert.match(view, /translate\(\{ y: -7 \* this\.progress \}\)/);
+  assert.match(view, /!NativeMotion\.enabled\(\)/);
+  assert.doesNotMatch(view, /撤销|查看变更/);
+  assert.match(workspace, /NativeTurnChangesCard\(\{[\s\S]{0,500}onOpenFile:[\s\S]{0,180}this\.openTurnChangeFile/);
+  assert.match(workspace, /NativeTurnChangePill\(\{[\s\S]{0,180}liveTurnChanges/);
+  assert.match(workspace, /nativeLiveTurnChange\(rows,[\s\S]{0,180}model\.running/);
+  assert.match(workspace, /Flex\(\{ direction: FlexDirection\.ColumnReverse \}\)/);
+  assert.match(workspace, /NativeBottomConversationDock\(\{[\s\S]{0,260}horizontalBleed: 12/);
+  assert.match(dock, /backgroundBlurStyle\(NativeExperience\.materialsEnabled\(\) \? BlurStyle\.Thin : BlurStyle\.NONE\)/);
+  assert.match(dock, /margin\(\{ left: -this\.horizontalBleed, right: -this\.horizontalBleed \}\)/);
+  assert.match(workspace, /hitTestBehavior\(HitTestMode\.Transparent\)\.zIndex\(6\)/);
+  assert.match(workspace, /this\.liveTurnChangesVisible = false/);
+});
+
 test('non-edit tools never enter diff projection and malformed diff data is inert', () => {
   const { nativeDiff } = load('NativeDiff', {});
   const plan = Object.assign({
