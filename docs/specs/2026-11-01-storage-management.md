@@ -73,6 +73,11 @@ disabled and shows a progress indicator. Success assigns the refreshed usage
 without toast or success copy. Failure leaves previous values visible and shows
 `缓存清理失败，请重试`.
 
+Breakdown rows pass stable field keys to their ArkUI builder and resolve the
+latest number through component state when rendered. Passing pre-read numeric
+arguments into a builder is prohibited because ArkUI may keep those parameters
+stale after the aggregate state object is replaced.
+
 All state changes use the existing semantic micro/navigation motion tokens.
 
 ## Verification

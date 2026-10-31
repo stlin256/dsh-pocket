@@ -263,6 +263,15 @@ export struct NativeSettings {
     if (failed && this.mounted) this.storageError = '缓存清理失败，请重试';
   }
 
+  private storageBreakdownValue(kind: string): number {
+    if (kind === 'conversation') return this.storageUsage.conversation;
+    if (kind === 'fileBrowser') return this.storageUsage.fileBrowser;
+    if (kind === 'fileContent') return this.storageUsage.fileContent;
+    if (kind === 'imageAttachments') return this.storageUsage.imageAttachments;
+    if (kind === 'navigation') return this.storageUsage.navigation;
+    return 0;
+  }
+
   private level(value: string, fallback: string): string {
     return ['off', 'quiet', 'standard', 'prominent'].includes(value) ? value : fallback;
   }
@@ -885,10 +894,11 @@ export struct NativeSettings {
   }
 
   @Builder
-  private storageBreakdownRow(title: string, bytes: number) {
+  private storageBreakdownRow(title: string, kind: string) {
     Row({ space: 12 }) {
       Text(title).fontSize(14).layoutWeight(1).fontColor(this.dark ? '#F0F1F2' : '#24262A')
-      Text(nativeFormatStorageBytes(bytes)).fontSize(13).fontWeight(FontWeight.Medium)
+      Text(nativeFormatStorageBytes(this.storageBreakdownValue(kind)))
+        .fontSize(13).fontWeight(FontWeight.Medium)
         .fontColor(this.dark ? '#A6A9AE' : '#686C72')
     }.width('100%').height(50).padding({ left: 14, right: 14 })
   }
@@ -917,15 +927,15 @@ export struct NativeSettings {
           }.width('100%').padding(16).borderRadius(16)
             .backgroundColor(this.dark ? '#232326' : '#FFFFFF')
           Column() {
-            this.storageBreakdownRow('对话内容', this.storageUsage.conversation)
+            this.storageBreakdownRow('对话内容', 'conversation')
             Divider().strokeWidth(0.5).margin({ left: 14 }).color(this.dark ? '#323236' : '#E9EAEC')
-            this.storageBreakdownRow('文件浏览', this.storageUsage.fileBrowser)
+            this.storageBreakdownRow('文件浏览', 'fileBrowser')
             Divider().strokeWidth(0.5).margin({ left: 14 }).color(this.dark ? '#323236' : '#E9EAEC')
-            this.storageBreakdownRow('文件内容', this.storageUsage.fileContent)
+            this.storageBreakdownRow('文件内容', 'fileContent')
             Divider().strokeWidth(0.5).margin({ left: 14 }).color(this.dark ? '#323236' : '#E9EAEC')
-            this.storageBreakdownRow('图片附件', this.storageUsage.imageAttachments)
+            this.storageBreakdownRow('图片附件', 'imageAttachments')
             Divider().strokeWidth(0.5).margin({ left: 14 }).color(this.dark ? '#323236' : '#E9EAEC')
-            this.storageBreakdownRow('界面索引', this.storageUsage.navigation)
+            this.storageBreakdownRow('界面索引', 'navigation')
           }.width('100%').borderRadius(16).clip(true)
             .backgroundColor(this.dark ? '#232326' : '#FFFFFF')
           Button({ type: ButtonType.Normal }) {

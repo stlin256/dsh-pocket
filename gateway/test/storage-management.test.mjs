@@ -131,6 +131,10 @@ test('Settings exposes confirmed red storage clearing without success feedback',
   assert.match(settings, /fontColor: '#D44A4A'/);
   assert.match(settings, /Text\('清空缓存'\)[\s\S]{0,100}fontColor\(this\.dark \? '#FF9999' : '#B83A3A'\)/);
   assert.match(settings, /this\.settingsPage === 'storage'/);
+  assert.match(settings, /storageBreakdownRow\(title: string, kind: string\)/);
+  assert.match(settings, /nativeFormatStorageBytes\(this\.storageBreakdownValue\(kind\)\)/);
+  assert.match(settings, /storageBreakdownRow\('对话内容', 'conversation'\)/);
+  assert.match(settings, /storageBreakdownRow\('文件浏览', 'fileBrowser'\)/);
   assert.doesNotMatch(settings, /Storage[^\n]*success|缓存已清空|showToast\([\s\S]{0,80}清空/);
 });
 
