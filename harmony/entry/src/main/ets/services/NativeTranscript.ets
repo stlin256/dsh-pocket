@@ -101,17 +101,15 @@ function copy(value: NativeMessage): NativeMessage {
 /** Replace only the existing live Assistant row for text-only deltas. */
 export function nativeUpdateLiveAssistant(rows: NativeMessage[], text: string): NativeMessage[] | null {
   if (!text.trim()) return null;
-  for (let index = rows.length - 1; index >= 0; index--) {
-    const row = rows[index];
-    if (row.id !== 'live-assistant' || row.role !== 'assistant') continue;
-    const next = copy(row);
-    next.text = text;
-    next.blocks = [];
-    const updated = rows.slice();
-    updated[index] = next;
-    return updated;
-  }
-  return null;
+  const index = rows.length - 1;
+  const row = rows[index];
+  if (!row || row.id !== 'live-assistant' || row.role !== 'assistant') return null;
+  const next = copy(row);
+  next.text = text;
+  next.blocks = [];
+  const updated = rows.slice();
+  updated[index] = next;
+  return updated;
 }
 
 /**

@@ -40,7 +40,8 @@
   `NativeInlineText` runs the full inline scanner for every text update.
 - `NativeListSource` compares up to the last 16 rows by serializing their full
   objects. Large cumulative streamed text therefore creates avoidable main-thread
-  work even though most durable rows did not change.
+  work even though most durable rows did not change. Rebuilding every render key
+  before taking a tail-only fast path still walks the complete transcript.
 - The safest latency improvements are display-frame coalescing, reuse of the
   projection for unchanged durable records, fast no-syntax Markdown paths and
   avoiding per-token decorative animation. Wire ordering and gap detection must
@@ -49,6 +50,10 @@
   serialized all writes through one promise chain. High/low watermarks on the
   downstream socket preserve bounded memory without adding an event-loop turn
   per token.
+- A tail-only visual update is safe only while the live Assistant row remains
+  the final visible row and the durable message window has not changed. A
+  structural event, tool update, or a new process row must invalidate the fast
+  path before the next paint.
 
 ## Session title
 

@@ -7,12 +7,7 @@ export class NativeListSource<T> implements IDataSource {
   getData(index: number): T { return this.rows[index]; }
   registerDataChangeListener(listener: DataChangeListener): void { if (!this.listeners.includes(listener)) this.listeners.push(listener); }
   unregisterDataChangeListener(listener: DataChangeListener): void { this.listeners = this.listeners.filter((item: DataChangeListener) => item !== listener); }
-  /**
-   * `changedTail` is a correctness-preserving fast path for high-frequency
-   * stream paints: when the caller knows only the final rows changed, avoid
-   * serializing cumulative streamed text just to rediscover those indices.
-   */
-  set(rows: T[], keyOf?: (item: T) => string, changedTail: number = 0): void {
+  set(rows: T[], keyOf?: (item: T) => string): void {
     const previous = this.rows;
     const previousKeys = this.keys;
     const key = (item: T): string => keyOf ? keyOf(item) : JSON.stringify(item);
@@ -30,11 +25,6 @@ export class NativeListSource<T> implements IDataSource {
     this.listeners.forEach((listener: DataChangeListener) => {
       const stableKeys = rows.length === previous.length &&
         nextKeys.every((value: string, index: number): boolean => value === previousKeys[index]);
-      if (stableKeys && changedTail > 0) {
-        const start = Math.max(0, rows.length - changedTail);
-        for (let index = start; index < rows.length; index++) listener.onDataChange(index);
-        return;
-      }
       if (rows.length === previous.length + 1 &&
         previousKeys.every((value: string, index: number): boolean => value === nextKeys[index])) {
         listener.onDataAdded(rows.length - 1);
@@ -67,6 +57,22 @@ export class NativeListSource<T> implements IDataSource {
         return;
       }
       listener.onDataReloaded();
+    });
+  }
+  /**
+   * Publish a text-only tail replacement without rebuilding every render key.
+   * Callers must keep row count and identity stable and change only the final
+   * `changedTail` rows. Any structural change falls back to `set`.
+   */
+  setTail(rows: T[], changedTail: number = 1): void {
+    if (changedTail <= 0 || rows.length !== this.rows.length || rows.length === 0) {
+      this.set(rows);
+      return;
+    }
+    this.rows = rows.slice();
+    const start = Math.max(0, rows.length - changedTail);
+    this.listeners.forEach((listener: DataChangeListener) => {
+      for (let index = start; index < rows.length; index++) listener.onDataChange(index);
     });
   }
 }

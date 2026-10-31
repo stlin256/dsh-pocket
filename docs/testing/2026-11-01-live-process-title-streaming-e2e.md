@@ -15,6 +15,7 @@
 | LPS-11 | Enable reduced motion | Card expansion and any terminal follow-through resolve directly to the final state | Pending |
 | LPS-12 | Repeat with API 23 | All behavior and latency targets hold with opaque surfaces and no higher-API-only API calls | Pending |
 | LPS-13 | Stream reasoning, then a long prose answer in the same turn | Reasoning remains in its process group while later prose deltas update only the live answer tail at display cadence | Pending |
+| LPS-14 | Receive a tool or durable event while answer prose remains live | The new process/footer row appears immediately; no paint reuses a stale text-only tail snapshot | Pending |
 
 Device evidence is required before any row becomes Pass. No device was online
 for this implementation.

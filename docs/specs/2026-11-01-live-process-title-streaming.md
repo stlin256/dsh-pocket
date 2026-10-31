@@ -53,6 +53,10 @@ Reduced motion resolves the card expansion and scroll to the final state.
   assistant row exists, later text-only deltas patch that row even when the same
   turn still carries completed reasoning or tool rows. Any structural frame
   invalidates the fast path so the next paint performs a complete projection.
+- The tail patch is accepted only when `live-assistant` is the final visible
+  row. `NativeListSource.setTail` then updates the data snapshot and emits one
+  change for that index without rebuilding render keys. Size changes, missing
+  tail identity, or any non-text delta fall back to the full `set` path.
 - Add no animation to token text updates or ordinary tail appends.
 - Gateway delivery uses 256 KiB high and 64 KiB low watermarks on
   `bufferedAmount`. WebSocket writes remain ordered, while the source pauses
@@ -86,7 +90,10 @@ malformed values are ignored.
 
 - Model/source contracts cover current-turn selection, manual disclosure
   precedence, terminal-card callback placement, 16ms visual coalescing, Markdown
-  fast paths and title frame handling.
+  fast paths, tail-only list publication and title frame handling.
+- A regression contract keeps a streamed answer on the fast path after settled
+  reasoning, but forces a full projection when the live answer is no longer the
+  final row or when a tool/structural update arrives.
 - Gateway WebSocket tests cover initial and updated title projections in both
   modern and legacy paths, plus malformed value rejection.
 - Existing stream ordering, Unicode, settlement, history and reconnect tests

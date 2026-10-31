@@ -1358,9 +1358,9 @@ export struct NativeWorkspace {
       }
       const wasActive = this.running || this.waiting;
       this.model.apply(frame);
-      if (frame.type === 'delta' && frame.text.length > 0 &&
-        !frame.reasoning && !(frame.toolUpdates || []).length) {
-        this.streamTextPatchDirty = true;
+      if (frame.type === 'delta') {
+        this.streamTextPatchDirty = frame.text.length > 0 &&
+          !frame.reasoning && !(frame.toolUpdates || []).length;
       } else if (['snapshot', 'event', 'start', 'end', 'state'].includes(frame.type)) {
         this.streamTextPatchDirty = false;
       }
@@ -1582,8 +1582,11 @@ export struct NativeWorkspace {
       }
     }
     this.visibleRows = visible;
-    this.source.set(visible, (row: NativeMessage): string => row.id,
-      tailOnlyTextUpdate ? 2 : 0);
+    if (tailOnlyTextUpdate) {
+      this.source.setTail(visible, 2);
+    } else {
+      this.source.set(visible, (row: NativeMessage): string => row.id);
+    }
   }
   private turnChangeFor(turnKey: string): NativeTurnChangeSummary {
     const official = this.officialTurnChanges.find((summary: NativeTurnChangeSummary): boolean =>
